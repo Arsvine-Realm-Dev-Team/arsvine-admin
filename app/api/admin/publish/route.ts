@@ -34,12 +34,16 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
       slug: string;
+      locale: 'zh-CN' | 'zh-TW' | 'en' | 'ja' | 'ru' | 'fr';
       title: string;
-      summary: string;
+      excerpt: string;
       date: string;
+      tags: string[];
+      pinned: boolean;
       content: string;
       accessMode: 'public' | 'totp';
       accessGroup?: string;
+      originLocale?: 'zh-CN' | 'zh-TW' | 'en' | 'ja' | 'ru' | 'fr';
     };
 
     const data = await publishPost(body);

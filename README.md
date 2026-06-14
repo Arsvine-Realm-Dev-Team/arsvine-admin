@@ -7,8 +7,8 @@ Web-only admin console for the private content repository.
 - administrator password login
 - signed `HttpOnly` session cookie + readable CSRF cookie
 - Markdown writing and live preview
-- publish `posts/YYYY/slug.md` into the private GitHub content repo
-- rebuild `posts-index.json`
+- publish `blog/<slug>/<locale>.mdx` variants into the private GitHub content repo
+- rebuild `blog-index.json`
 - call the public site's `/api/revalidate-content`
 
 ## Required Environment Variables
@@ -32,13 +32,14 @@ scrypt$<base64url-salt>$<base64url-hash>
 ## Expected Content Repo Shape
 
 ```text
-posts/
-  2026/
-    my-first-post.md
-posts-index.json
+blog/
+  my-first-post/
+    zh-CN.mdx
+    en.mdx
+blog-index.json
 ```
 
-### Example `posts-index.json`
+### Example `blog-index.json`
 
 ```json
 {
@@ -47,13 +48,24 @@ posts-index.json
   "posts": [
     {
       "slug": "my-first-post",
-      "title": "My First Post",
-      "path": "posts/2026/my-first-post.md",
-      "summary": "A short summary.",
       "date": "2026-06-14",
       "updatedAt": "2026-06-14T12:00:00.000Z",
+      "tags": ["Essay"],
+      "pinned": false,
       "access": {
         "mode": "public"
+      },
+      "availableLocales": ["zh-CN", "en"],
+      "variants": {
+        "zh-CN": {
+          "title": "我的第一篇文章",
+          "excerpt": "一段简短摘要。"
+        },
+        "en": {
+          "title": "My First Post",
+          "excerpt": "A short summary.",
+          "originLocale": "zh-CN"
+        }
       }
     }
   ]
@@ -65,9 +77,13 @@ posts-index.json
 ```md
 ---
 title: My First Post
-summary: A short summary.
+excerpt: A short summary.
 date: 2026-06-14
-updatedAt: 2026-06-14T12:00:00.000Z
+tags:
+  - Essay
+pinned: false
+originLocale: zh-CN
+updated: 2026-06-14T12:00:00.000Z
 access:
   mode: public
 ---

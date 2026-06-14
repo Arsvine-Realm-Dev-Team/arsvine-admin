@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSessionFromRequest, verifyCsrf } from '../../../../lib/auth';
-import { rebuildPostsIndex } from '../../../../lib/posts';
+import { rebuildBlogIndex } from '../../../../lib/posts';
 
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const data = await rebuildPostsIndex();
+    const data = await rebuildBlogIndex();
     return NextResponse.json({ ok: true, data });
   } catch (error) {
     return NextResponse.json(

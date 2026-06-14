@@ -98,7 +98,7 @@ textarea {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.15fr) minmax(320px, 0.85fr);
   gap: 20px;
 }
 
@@ -106,6 +106,12 @@ textarea {
   border: 1px solid var(--line);
   background: var(--panel);
   padding: 22px;
+}
+
+.panel-muted {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
 }
 
 .panel-header {
@@ -133,6 +139,17 @@ textarea {
   gap: 14px 16px;
 }
 
+.field-group + .field-group {
+  margin-top: 26px;
+}
+
+.field-group h3 {
+  margin: 0 0 14px;
+  color: var(--accent-strong);
+  font-size: 0.96rem;
+  letter-spacing: 0.08em;
+}
+
 .form-grid label {
   display: grid;
   gap: 8px;
@@ -147,6 +164,75 @@ textarea {
 
 .full-span {
   grid-column: 1 / -1;
+}
+
+.checkbox-label {
+  align-content: end;
+}
+
+.checkbox-label input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 0;
+}
+
+.archive-list {
+  display: grid;
+  gap: 14px;
+  max-height: calc(100vh - 260px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.archive-card {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 14px;
+}
+
+.archive-head,
+.archive-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.archive-head strong {
+  font-size: 0.98rem;
+}
+
+.archive-head span,
+.archive-meta span {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.archive-meta {
+  margin-top: 8px;
+}
+
+.variant-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.variant-chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.variant-chip.active {
+  border-color: rgba(140, 191, 147, 0.42);
+  background: rgba(140, 191, 147, 0.12);
+  color: var(--accent-strong);
 }
 
 input,

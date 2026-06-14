@@ -93,7 +93,7 @@ export async function putFile(params: {
   return response.json();
 }
 
-export async function listPostMarkdownPaths() {
+export async function listBlogVariantPaths() {
   const response = await githubFetch(treeUrl());
   if (!response.ok) {
     throw new Error(`Failed to read repo tree: ${response.status} ${response.statusText}`);
@@ -101,12 +101,12 @@ export async function listPostMarkdownPaths() {
 
   const json = (await response.json()) as GitHubTreeResponse;
   return json.tree
-    .filter((entry) => entry.type === 'blob' && /^posts\/.+\.md$/.test(entry.path))
+    .filter((entry) => entry.type === 'blob' && /^blog\/[^/]+\/[^/]+\.mdx$/.test(entry.path))
     .map((entry) => entry.path)
     .sort();
 }
 
-export async function triggerPublicRevalidate() {
+export async function triggerPublicRevalidate(slug?: string) {
   if (!PUBLIC_REVALIDATE_URL || !PUBLIC_REVALIDATE_SECRET) {
     throw new Error('Missing PUBLIC_REVALIDATE_URL or PUBLIC_REVALIDATE_SECRET');
   }
@@ -118,6 +118,7 @@ export async function triggerPublicRevalidate() {
     },
     body: JSON.stringify({
       secret: PUBLIC_REVALIDATE_SECRET,
+      ...(slug ? { slug } : {}),
     }),
   });
 
