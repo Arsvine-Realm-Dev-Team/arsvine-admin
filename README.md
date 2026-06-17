@@ -12,6 +12,7 @@ Web-only admin console for the private content repository.
 - manage `tweets/index.json` and `tweets/YYYY-MM.json` from `/tweets`
 - call the public site's `/api/revalidate-content` and `/api/revalidate`
 - persistent rate limiting on Vercel via Upstash Redis (with local fallback)
+- `@vercel/analytics` page analytics
 
 ## Required Environment Variables
 
@@ -68,7 +69,7 @@ When stored in `.env.local`, each `$` must be escaped as `\$`, otherwise Next wi
 ## Vercel Deployment
 
 1. Create a separate Vercel project for `arsvine-admin`.
-2. Set the Node runtime to `22.x` (the repo also declares this in `package.json`).
+2. Set the Node runtime to `24.x` (the repo also declares this in `package.json`).
 3. Enable Vercel Authentication for both Preview and Production deployments.
 4. Add the required environment variables:
 
