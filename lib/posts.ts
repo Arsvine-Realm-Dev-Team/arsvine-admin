@@ -28,6 +28,7 @@ export type PublishInput = {
 export type BlogIndexVariant = {
   title: string;
   excerpt: string;
+  tags?: string[];
   originLocale?: BlogLocale;
 };
 
@@ -201,6 +202,7 @@ function toIndexItem(slug: string, docs: BlogVariantDocument[]): BlogIndexItem {
         typeof doc.data.excerpt === 'string' && doc.data.excerpt.trim()
           ? doc.data.excerpt.trim()
           : '',
+      tags: normalizeTags(Array.isArray(doc.data.tags) ? doc.data.tags : []),
       ...(doc.data.originLocale ? { originLocale: doc.data.originLocale } : {}),
     };
     return acc;
