@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
       sub: session.sub,
       exp: session.exp,
       csrf: session.csrf,
+      amr: session.amr,
     },
   });
 }

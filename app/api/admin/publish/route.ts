@@ -23,11 +23,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const limiter = enforceRateLimit(`publish:${getClientKey(request)}`, 10, 60_000);
+  const limiter = await enforceRateLimit(`publish:${getClientKey(request)}`, 10, 60_000);
   if (!limiter.ok) {
     return NextResponse.json(
       { ok: false, error: { message: '发布过于频繁，请稍后再试。' } },
-      { status: 429 },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil(limiter.retryAfterMs / 1000)) } },
     );
   }
 

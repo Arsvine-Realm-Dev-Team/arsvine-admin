@@ -1,0 +1,353 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+
+import ComposerPanel, { INITIAL_TWEET_FORM, type TweetFormState } from './composer-panel';
+import MonthIndexPanel from './month-index-panel';
+import RepositoryPanel from './repository-panel';
+import StatsStrip from './stats-strip';
+import TweetListPanel from './tweet-list-panel';
+import { VISIBILITY_LABELS } from './filter-labels';
+import {
+  filterTweets,
+  formatDateTimeLocal,
+  monthFromCreatedAt,
+  parseTags,
+  pickActiveMonth,
+  tagsToInput,
+} from './tweet-utils';
+import { getTranslationTargetLocales } from '../../lib/tweets-types';
+import type {
+  CreateTweetInput,
+  TweetFilter,
+  TweetItem,
+  TweetMonthRecord,
+  TweetsDashboardData,
+  UpdateTweetInput,
+  TweetVisibility,
+} from '../../lib/tweets-types';
+
+type TweetsPageClientProps = {
+  csrfToken: string;
+};
+
+type AdminResponse<T> = { ok: true; data: T } | { ok: false; error: { message: string } };
+
+function unwrapError(json: AdminResponse<unknown>, fallback: string) {
+  return json.ok ? fallback : json.error.message;
+}
+
+function normalizeFormFromTweetItem(tweet: TweetItem): TweetFormState {
+  return {
+    content: tweet.content,
+    lang: tweet.lang ?? 'zh-CN',
+    tags: tagsToInput(tweet.tags),
+    visibility: (tweet.visibility ?? 'public') as TweetVisibility,
+    pinned: Boolean(tweet.pinned),
+    createdAt: formatDateTimeLocal(tweet.createdAt),
+    autoTranslate: false,
+  };
+}
+
+export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
+  const [data, setData] = useState<TweetsDashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [retranslating, setRetranslating] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState('');
+  const [filter, setFilter] = useState<TweetFilter>('all');
+  const [editingTweetId, setEditingTweetId] = useState<string | null>(null);
+  const [composerMode, setComposerMode] = useState<'create' | 'edit' | null>(null);
+  const [form, setForm] = useState<TweetFormState>(INITIAL_TWEET_FORM);
+  const [pendingDelete, setPendingDelete] = useState<TweetItem | null>(null);
+
+  useEffect(() => {
+    void loadDashboard();
+  }, []);
+
+  async function loadDashboard(preferredMonth?: string) {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/admin/tweets', { cache: 'no-store' });
+      if (response.status === 401) {
+        window.location.href = '/login';
+        return;
+      }
+      const json = (await response.json()) as AdminResponse<TweetsDashboardData>;
+      if (!response.ok || !json.ok) {
+        throw new Error(unwrapError(json, 'Failed to load tweets.'));
+      }
+      setData(json.data);
+      setSelectedMonth(pickActiveMonth(json.data.months, preferredMonth ?? null));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '加载推文数据失败。');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const months = data?.months ?? [];
+  const activeMonthRecord: TweetMonthRecord | null =
+    months.find((m) => m.month === selectedMonth) ?? null;
+  const currentMonthTweets = activeMonthRecord?.tweets ?? [];
+  const filteredTweets = filterTweets(currentMonthTweets, filter);
+  const allTweets = months.flatMap((m) => m.tweets);
+  const editingTweet = editingTweetId
+    ? allTweets.find((t) => t.id === editingTweetId) ?? null
+    : null;
+  const totalTweetCount = months.reduce((sum, m) => sum + m.count, 0);
+  const publicCount = currentMonthTweets.filter((t) => (t.visibility ?? 'public') === 'public').length;
+  const privateCount = currentMonthTweets.filter((t) => (t.visibility ?? 'public') === 'private').length;
+  const hiddenCount = currentMonthTweets.filter((t) => (t.visibility ?? 'public') === 'hidden').length;
+  const pinnedCount = currentMonthTweets.filter((t) => t.pinned).length;
+
+  const composerMonth = monthFromCreatedAt(form.createdAt);
+  const targetMonthPath = composerMode
+    ? composerMonth
+      ? `tweets/${composerMonth}.json`
+      : 'tweets/YYYY-MM.json'
+    : activeMonthRecord?.path ?? (selectedMonth ? `tweets/${selectedMonth}.json` : 'tweets/YYYY-MM.json');
+
+  const translationTargets = useMemo(
+    () => getTranslationTargetLocales(form.lang as CreateTweetInput['lang']),
+    [form.lang],
+  );
+
+  function updateField<K extends keyof TweetFormState>(key: K, value: TweetFormState[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function resetForm() {
+    setEditingTweetId(null);
+    setComposerMode(null);
+    setForm(INITIAL_TWEET_FORM());
+  }
+
+  function startCreate() {
+    setEditingTweetId(null);
+    setComposerMode('create');
+    setForm(INITIAL_TWEET_FORM());
+  }
+
+  function startEdit(tweet: TweetItem) {
+    setEditingTweetId(tweet.id);
+    setComposerMode('edit');
+    setForm(normalizeFormFromTweetItem(tweet));
+  }
+
+  async function runMutation(
+    url: string,
+    init: RequestInit,
+    successMessage: string,
+    nextMonth?: string,
+  ) {
+    setSaving(true);
+    try {
+      const response = await fetch(url, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': csrfToken,
+          ...(init.headers ?? {}),
+        },
+      });
+      if (response.status === 401) {
+        window.location.href = '/login';
+        return null;
+      }
+      const json = (await response.json()) as AdminResponse<unknown>;
+      if (!response.ok || !json.ok) {
+        throw new Error(unwrapError(json, '保存失败。'));
+      }
+      await loadDashboard(nextMonth);
+      toast.success(successMessage);
+      return json;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '操作失败。');
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSubmit() {
+    if (composerMode === 'edit' && editingTweet) {
+      const editMonth = monthFromCreatedAt(form.createdAt) || selectedMonth;
+      const payload: UpdateTweetInput = {
+        content: form.content,
+        lang: form.lang as UpdateTweetInput['lang'],
+        tags: parseTags(form.tags),
+        visibility: form.visibility,
+        pinned: form.pinned,
+      };
+      const result = await runMutation(
+        `/api/admin/tweets/${editingTweet.id}`,
+        { method: 'PUT', body: JSON.stringify(payload) },
+        '推文已更新。',
+        editMonth,
+      );
+      if (result) {
+        resetForm();
+      }
+      return;
+    }
+    const targetMonth = monthFromCreatedAt(form.createdAt);
+    const payload: CreateTweetInput = {
+      content: form.content,
+      lang: form.lang as CreateTweetInput['lang'],
+      tags: parseTags(form.tags),
+      visibility: form.visibility,
+      pinned: form.pinned,
+      createdAt: form.createdAt,
+      autoTranslate: form.autoTranslate,
+    };
+    const result = await runMutation(
+      '/api/admin/tweets',
+      { method: 'POST', body: JSON.stringify(payload) },
+      form.autoTranslate ? '推文与自动译文已创建。' : '推文已创建。',
+      targetMonth,
+    );
+    if (result) {
+      resetForm();
+    }
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const tweet = pendingDelete;
+    setPendingDelete(null);
+    const deleteMonth =
+      editingTweetId === tweet.id
+        ? monthFromCreatedAt(form.createdAt) || selectedMonth
+        : selectedMonth;
+    const result = await runMutation(
+      `/api/admin/tweets/${tweet.id}`,
+      { method: 'DELETE' },
+      `推文 ${tweet.id} 已删除。`,
+      deleteMonth,
+    );
+    if (result && editingTweetId === tweet.id) {
+      resetForm();
+    }
+  }
+
+  async function handleRetranslate() {
+    if (!editingTweet) return;
+    setRetranslating(true);
+    try {
+      const response = await fetch(`/api/admin/tweets/${editingTweet.id}/retranslate`, {
+        method: 'POST',
+        headers: { 'x-csrf-token': csrfToken },
+      });
+      if (response.status === 401) {
+        window.location.href = '/login';
+        return;
+      }
+      const json = (await response.json()) as AdminResponse<{ month?: string }>;
+      if (!response.ok || !json.ok) {
+        throw new Error(unwrapError(json, '自动翻译失败。'));
+      }
+      await loadDashboard(json.data.month ?? selectedMonth);
+      toast.success(`推文 ${editingTweet.id} 的自动译文已更新。`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '自动翻译失败。');
+    } finally {
+      setRetranslating(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <RepositoryPanel data={data} targetPath={targetMonthPath} />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <MonthIndexPanel
+          months={months}
+          activeMonth={selectedMonth}
+          onSelect={(month) => {
+            setSelectedMonth(month);
+            setFilter('all');
+          }}
+        />
+
+        <div className="flex flex-col gap-4">
+          <StatsStrip
+            total={totalTweetCount}
+            publicCount={publicCount}
+            privateCount={privateCount}
+            hiddenCount={hiddenCount}
+            pinnedCount={pinnedCount}
+          />
+
+          {composerMode ? (
+            <ComposerPanel
+              mode={composerMode}
+              form={form}
+              onChange={updateField}
+              editingTweet={editingTweet}
+              translationTargets={translationTargets as unknown as string[]}
+              saving={saving}
+              retranslating={retranslating}
+              onSubmit={() => void handleSubmit()}
+              onCancel={resetForm}
+              onDelete={
+                composerMode === 'edit' && editingTweet
+                  ? () => setPendingDelete(editingTweet)
+                  : undefined
+              }
+              onRetranslate={composerMode === 'edit' ? () => void handleRetranslate() : undefined}
+            />
+          ) : null}
+
+          <TweetListPanel
+            monthLabel={activeMonthRecord ? `${activeMonthRecord.month} 月份` : '推文列表'}
+            filter={filter}
+            onFilterChange={setFilter}
+            onCreate={startCreate}
+            loading={loading}
+            emptyHint={
+              !activeMonthRecord
+                ? '当前还没有任何月份数据，点击右上角“+”开始写第一条。'
+                : '当前月份在此筛选条件下没有推文。'
+            }
+            tweets={filteredTweets}
+            onEdit={startEdit}
+            onDelete={(tweet) => setPendingDelete(tweet)}
+          />
+        </div>
+      </div>
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除推文</AlertDialogTitle>
+            <AlertDialogDescription>
+              推文 {pendingDelete?.id}（当前可见性：{pendingDelete ? VISIBILITY_LABELS[(pendingDelete.visibility ?? 'public') as TweetVisibility] : ''}）将被永久删除。该操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void confirmDelete()}>删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

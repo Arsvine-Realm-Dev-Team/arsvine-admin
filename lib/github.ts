@@ -4,6 +4,7 @@ const BRANCH = process.env.GITHUB_BRANCH?.trim() || 'main';
 const WRITE_TOKEN = process.env.GITHUB_WRITE_TOKEN?.trim();
 const PUBLIC_REVALIDATE_URL = process.env.PUBLIC_REVALIDATE_URL?.trim();
 const PUBLIC_REVALIDATE_SECRET = process.env.PUBLIC_REVALIDATE_SECRET?.trim();
+const PUBLIC_TWEETS_REVALIDATE_URL = process.env.PUBLIC_TWEETS_REVALIDATE_URL?.trim();
 
 type GitHubContentResponse = {
   sha: string;
@@ -13,6 +14,18 @@ type GitHubContentResponse = {
 type GitHubTreeResponse = {
   tree: Array<{ path: string; type: string }>;
 };
+
+export class GitHubError extends Error {
+  status: number;
+  body?: string;
+
+  constructor(message: string, status: number, body?: string) {
+    super(message);
+    this.name = 'GitHubError';
+    this.status = status;
+    this.body = body;
+  }
+}
 
 function assertEnv() {
   if (!OWNER) throw new Error('Missing GITHUB_OWNER');
@@ -46,11 +59,21 @@ async function githubFetch(url: string, init?: RequestInit) {
   return response;
 }
 
+export function getContentRepoInfo() {
+  assertEnv();
+  return {
+    owner: OWNER as string,
+    repo: REPO as string,
+    branch: BRANCH,
+    url: `https://github.com/${OWNER}/${REPO}`,
+  };
+}
+
 export async function getFile(path: string) {
   const response = await githubFetch(contentUrl(path));
   if (response.status === 404) return null;
   if (!response.ok) {
-    throw new Error(`Failed to fetch ${path}: ${response.status} ${response.statusText}`);
+    throw new GitHubError(`Failed to fetch ${path}: ${response.status} ${response.statusText}`, response.status);
   }
 
   const json = (await response.json()) as GitHubContentResponse;
@@ -85,25 +108,67 @@ export async function putFile(params: {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(
+    throw new GitHubError(
       `Failed to write ${params.path}: ${response.status} ${response.statusText}${body ? ` - ${body}` : ''}`,
+      response.status,
+      body,
     );
   }
 
   return response.json();
 }
 
-export async function listBlogVariantPaths() {
+export async function deleteFile(params: {
+  path: string;
+  message: string;
+  sha: string;
+}) {
+  const response = await githubFetch(contentUrl(params.path), {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: params.message,
+      branch: BRANCH,
+      sha: params.sha,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new GitHubError(
+      `Failed to delete ${params.path}: ${response.status} ${response.statusText}${body ? ` - ${body}` : ''}`,
+      response.status,
+      body,
+    );
+  }
+
+  return response.json();
+}
+
+async function listTreePaths() {
   const response = await githubFetch(treeUrl());
   if (!response.ok) {
-    throw new Error(`Failed to read repo tree: ${response.status} ${response.statusText}`);
+    throw new GitHubError(`Failed to read repo tree: ${response.status} ${response.statusText}`, response.status);
   }
 
   const json = (await response.json()) as GitHubTreeResponse;
-  return json.tree
+  return json.tree;
+}
+
+export async function listBlogVariantPaths() {
+  return (await listTreePaths())
     .filter((entry) => entry.type === 'blob' && /^blog\/[^/]+\/[^/]+\.mdx$/.test(entry.path))
     .map((entry) => entry.path)
     .sort();
+}
+
+export async function listTweetMonthPaths() {
+  return (await listTreePaths())
+    .filter((entry) => entry.type === 'blob' && /^tweets\/\d{4}-\d{2}\.json$/.test(entry.path))
+    .map((entry) => entry.path)
+    .sort((a, b) => b.localeCompare(a));
 }
 
 export async function triggerPublicRevalidate(slug?: string) {
@@ -130,4 +195,43 @@ export async function triggerPublicRevalidate(slug?: string) {
   }
 
   return response.json() as Promise<{ revalidated: boolean; paths: string[] }>;
+}
+
+export async function triggerTweetsRevalidate() {
+  if (!PUBLIC_TWEETS_REVALIDATE_URL) {
+    return undefined;
+  }
+  if (!PUBLIC_REVALIDATE_SECRET) {
+    return {
+      revalidated: false,
+      paths: [],
+      error: 'Missing PUBLIC_REVALIDATE_SECRET',
+    };
+  }
+
+  try {
+    const url = new URL(PUBLIC_TWEETS_REVALIDATE_URL);
+    url.searchParams.set('secret', PUBLIC_REVALIDATE_SECRET);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      return {
+        revalidated: false,
+        paths: [],
+        error: `Tweets revalidate failed: ${response.status} ${response.statusText}${text ? ` - ${text}` : ''}`,
+      };
+    }
+
+    return response.json() as Promise<{ revalidated: boolean; paths: string[] }>;
+  } catch (error) {
+    return {
+      revalidated: false,
+      paths: [],
+      error: error instanceof Error ? error.message : 'Tweets revalidate failed.',
+    };
+  }
 }

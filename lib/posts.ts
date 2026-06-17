@@ -340,7 +340,7 @@ export async function publishPost(input: PublishInput) {
               ? variant.data.excerpt
               : '',
           date,
-          tags,
+          tags: Array.isArray(variant.data.tags) ? normalizeTags(variant.data.tags) : [],
           pinned: input.pinned,
           originLocale: variant.data.originLocale,
           access,

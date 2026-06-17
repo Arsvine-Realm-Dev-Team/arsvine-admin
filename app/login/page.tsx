@@ -1,62 +1,104 @@
 'use client';
 
 import { useState } from 'react';
+import { Loader2, LogIn } from 'lucide-react';
+import { toast } from 'sonner';
+
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Field, FieldGroup, FieldLabel, FieldSet } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+
+type LoginResponse = { ok: true } | { ok: false; error: { message: string } };
+
+async function readLoginResponse(response: Response): Promise<LoginResponse | null> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as LoginResponse;
+  } catch {
+    return null;
+  }
+}
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
+  const [totpToken, setTotpToken] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
-    setError('');
 
     try {
       const response = await fetch('/api/admin/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ password }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password, totpToken }),
       });
-
-      const json = (await response.json()) as
-        | { ok: true }
-        | { ok: false; error: { message: string } };
-
-      if (!response.ok || !json.ok) {
-        throw new Error(json.ok ? 'Login failed.' : json.error.message);
+      const json = await readLoginResponse(response);
+      if (!response.ok || !json?.ok) {
+        throw new Error(json?.ok ? '登录失败。' : json?.error.message ?? `登录失败（HTTP ${response.status}）。`);
       }
-
-      window.location.href = '/';
-    } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : 'Login failed.');
+      window.location.href = '/blog';
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '登录失败。');
     } finally {
       setSubmitting(false);
     }
-  };
+  }
 
   return (
-    <main className="login-shell">
-      <section className="login-card">
-        <p className="eyebrow">Admin Login</p>
-        <h1>ARSVINE ADMIN</h1>
-        <p>输入管理员密码以进入写作与发布后台。登录后会签发 HttpOnly 会话 cookie 与 CSRF token。</p>
-        <form onSubmit={handleSubmit}>
-          <input
-            type="password"
-            autoComplete="current-password"
-            placeholder="管理员密码"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-          {error ? <p className="status error">{error}</p> : null}
-          <button className="primary-button" type="submit" disabled={submitting}>
-            {submitting ? '登录中…' : '登录'}
-          </button>
-        </form>
-      </section>
-    </main>
+    <div className="flex min-h-svh items-center justify-center bg-background p-6">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardDescription>Admin Login</CardDescription>
+          <CardTitle>ARSVINE ADMIN</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            输入管理员密码与 6 位 TOTP 验证码以进入写作与发布后台。生产与 Preview 环境强制启用双因素认证；本地 dev 默认允许不填验证码。
+          </p>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <FieldSet>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel>管理员密码</FieldLabel>
+                  <Input
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel>TOTP 验证码</FieldLabel>
+                  <Input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="123456"
+                    value={totpToken}
+                    maxLength={6}
+                    onChange={(event) => setTotpToken(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  />
+                </Field>
+              </FieldGroup>
+            </FieldSet>
+            <Button type="submit" disabled={submitting} className="w-full">
+              {submitting ? (
+                <>
+                  <Loader2 className="animate-spin" /> 登录中…
+                </>
+              ) : (
+                <>
+                  <LogIn /> 登录
+                </>
+              )}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

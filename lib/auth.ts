@@ -1,15 +1,19 @@
 import { randomBytes, createHmac, timingSafeEqual, scryptSync } from 'node:crypto';
 import { cookies } from 'next/headers';
 import type { NextRequest, NextResponse } from 'next/server';
+import { isAdminTotpRequired, verifyAdminTotpToken } from './totp';
 
 const SESSION_COOKIE = 'arsvine_admin_session';
 const CSRF_COOKIE = 'arsvine_admin_csrf';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 
+export type AdminAuthMethod = 'password' | 'password+totp' | 'password+totp-dev-bypass';
+
 type AdminSession = {
   sub: 'admin';
   exp: number;
   csrf: string;
+  amr: AdminAuthMethod;
   sig: string;
 };
 
@@ -21,9 +25,9 @@ function getSessionSecret() {
   return secret;
 }
 
-function signSession(sub: string, exp: number, csrf: string) {
+function signSession(sub: string, exp: number, csrf: string, amr: AdminAuthMethod) {
   return createHmac('sha256', getSessionSecret())
-    .update(`${sub}:${exp}:${csrf}`)
+    .update(`${sub}:${exp}:${csrf}:${amr}`)
     .digest('base64url');
 }
 
@@ -39,14 +43,15 @@ function decodeSession(value: string) {
   }
 }
 
-export function createSession() {
+export function createSession(amr: AdminAuthMethod = 'password') {
   const csrf = randomBytes(18).toString('base64url');
   const exp = Date.now() + SESSION_TTL_SECONDS * 1000;
   const session: AdminSession = {
     sub: 'admin',
     exp,
     csrf,
-    sig: signSession('admin', exp, csrf),
+    amr,
+    sig: signSession('admin', exp, csrf, amr),
   };
 
   return {
@@ -61,7 +66,7 @@ function isSessionValid(session: AdminSession | null): session is AdminSession {
     return false;
   }
 
-  const expected = signSession(session.sub, session.exp, session.csrf);
+  const expected = signSession(session.sub, session.exp, session.csrf, session.amr);
   const left = Buffer.from(session.sig);
   const right = Buffer.from(expected);
 
@@ -150,4 +155,12 @@ export function verifyPassword(password: string) {
   }
 
   return timingSafeEqual(left, right);
+}
+
+export function verifyAdminTotp(token: string) {
+  return verifyAdminTotpToken(token);
+}
+
+export function adminTotpRequired() {
+  return isAdminTotpRequired();
 }
