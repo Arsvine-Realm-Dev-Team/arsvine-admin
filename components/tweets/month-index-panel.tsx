@@ -4,43 +4,65 @@ import { Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-import { formatMonthLabel, formatTimestamp } from './tweet-utils';
-import type { TweetMonthRecord } from '../../lib/tweets-types';
+import { formatTimestamp, type DateGranularity, type TweetDateGroup } from './tweet-utils';
 
 type MonthIndexPanelProps = {
-  months: TweetMonthRecord[];
-  activeMonth: string;
-  onSelect: (month: string) => void;
+  groups: TweetDateGroup[];
+  activeGroupKey: string;
+  granularity: DateGranularity;
+  onGranularityChange: (granularity: DateGranularity) => void;
+  onSelect: (key: string) => void;
 };
 
-export default function MonthIndexPanel({ months, activeMonth, onSelect }: MonthIndexPanelProps) {
+export default function MonthIndexPanel({
+  groups,
+  activeGroupKey,
+  granularity,
+  onGranularityChange,
+  onSelect,
+}: MonthIndexPanelProps) {
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="gap-3">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Calendar /> Month Index
+          <Calendar /> 时间索引
         </CardTitle>
+        <Tabs value={granularity} onValueChange={(value) => onGranularityChange((value ?? 'month') as DateGranularity)}>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="year">年</TabsTrigger>
+            <TabsTrigger value="month">月</TabsTrigger>
+            <TabsTrigger value="day">日</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </CardHeader>
       <CardContent>
-        {months.length === 0 ? (
-          <p className="text-sm text-muted-foreground">还没有任何月份数据。</p>
+        {groups.length === 0 ? (
+          <p className="text-sm text-muted-foreground">当前范围下还没有任何推文数据。</p>
         ) : (
           <ScrollArea className="max-h-[420px] pr-2">
             <div className="flex flex-col gap-1">
-              {months.map((month) => {
-                const active = month.month === activeMonth;
+              {groups.map((group) => {
+                const active = group.key === activeGroupKey;
                 return (
                   <Button
-                    key={month.month}
+                    key={group.key}
                     type="button"
                     variant={active ? 'default' : 'ghost'}
-                    onClick={() => onSelect(month.month)}
-                    className="h-auto justify-between py-2"
+                    onClick={() => onSelect(group.key)}
+                    className="h-auto justify-start py-2 text-left"
                   >
-                    <span className="text-sm font-medium">{formatMonthLabel(month.month)}</span>
-                    <span className="text-xs opacity-80">
-                      {month.count} 条 · {formatTimestamp(month.updatedAt)}
+                    <span className="flex w-full flex-col items-start gap-0.5">
+                      <span className="text-sm font-medium">{group.label}</span>
+                      <span className="text-xs opacity-80">
+                        {group.count} 条 ·{' '}
+                        {group.updatedAt ? (
+                          <time dateTime={group.updatedAt}>{formatTimestamp(group.updatedAt)}</time>
+                        ) : (
+                          '—'
+                        )}
+                      </span>
                     </span>
                   </Button>
                 );

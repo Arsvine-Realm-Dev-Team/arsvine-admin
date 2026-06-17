@@ -8,8 +8,10 @@ Web-only admin console for the private content repository.
 - signed `HttpOnly` session cookie + readable CSRF cookie
 - Markdown writing and live preview
 - publish `blog/<slug>/<locale>.mdx` variants into the private GitHub content repo
+- auto-translate `zh-CN` blog variants into `zh-TW` / `en` drafts using the shared MDX guide
 - rebuild `blog-index.json`
 - manage `tweets/index.json` and `tweets/YYYY-MM.json` from `/tweets`
+- auto-translate and retranslate tweets
 - call the public site's `/api/revalidate-content` and `/api/revalidate`
 - persistent rate limiting on Vercel via Upstash Redis (with local fallback)
 - `@vercel/analytics` page analytics
@@ -86,6 +88,16 @@ PUBLIC_TWEETS_REVALIDATE_URL
 PUBLIC_REVALIDATE_SECRET
 UPSTASH_REDIS_REST_URL
 UPSTASH_REDIS_REST_TOKEN
+```
+
+If you want tweet or blog auto-translation, also add:
+
+```text
+AI_TRANSLATION_BASE_URL
+AI_TRANSLATION_API_KEY
+AI_TRANSLATION_MODEL
+AI_TRANSLATION_THINKING
+AI_TRANSLATION_REASONING_EFFORT
 ```
 
 5. Scope secrets as follows:

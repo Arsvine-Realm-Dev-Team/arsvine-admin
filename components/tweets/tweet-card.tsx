@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
 import { VISIBILITY_LABELS } from './filter-labels';
+import { formatTimestamp } from './tweet-utils';
 import { SITE_TWEET_LOCALES } from '../../lib/tweets-types';
 import type { TweetItem, TweetVisibility } from '../../lib/tweets-types';
 
@@ -29,7 +30,12 @@ export default function TweetCard({ tweet, onEdit, onDelete }: TweetCardProps) {
           <div className="flex flex-col">
             <span className="font-mono text-sm font-medium">{tweet.id}</span>
             <span className="text-xs text-muted-foreground">
-              创建于 {tweet.createdAt} · 更新于 {tweet.updatedAt ?? '—'}
+              创建于 <time dateTime={tweet.createdAt}>{formatTimestamp(tweet.createdAt)}</time> · 更新于{' '}
+              {tweet.updatedAt ? (
+                <time dateTime={tweet.updatedAt}>{formatTimestamp(tweet.updatedAt)}</time>
+              ) : (
+                '—'
+              )}
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">

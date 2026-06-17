@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import {
@@ -23,17 +23,19 @@ import { VISIBILITY_LABELS } from './filter-labels';
 import {
   filterTweets,
   formatDateTimeLocal,
+  formatDateGroupLabel,
+  groupTweetsByGranularity,
   monthFromCreatedAt,
   parseTags,
-  pickActiveMonth,
+  pickActiveDateGroup,
   tagsToInput,
+  type DateGranularity,
 } from './tweet-utils';
 import { getTranslationTargetLocales } from '../../lib/tweets-types';
 import type {
   CreateTweetInput,
   TweetFilter,
   TweetItem,
-  TweetMonthRecord,
   TweetsDashboardData,
   UpdateTweetInput,
   TweetVisibility,
@@ -66,18 +68,15 @@ export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [retranslating, setRetranslating] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState('');
+  const [granularity, setGranularity] = useState<DateGranularity>('month');
+  const [selectedGroupKey, setSelectedGroupKey] = useState('');
   const [filter, setFilter] = useState<TweetFilter>('all');
   const [editingTweetId, setEditingTweetId] = useState<string | null>(null);
   const [composerMode, setComposerMode] = useState<'create' | 'edit' | null>(null);
   const [form, setForm] = useState<TweetFormState>(INITIAL_TWEET_FORM);
   const [pendingDelete, setPendingDelete] = useState<TweetItem | null>(null);
 
-  useEffect(() => {
-    void loadDashboard();
-  }, []);
-
-  async function loadDashboard(preferredMonth?: string) {
+  const loadDashboard = useCallback(async (preferredGroupKey?: string) => {
     setLoading(true);
     try {
       const response = await fetch('/api/admin/tweets', { cache: 'no-store' });
@@ -90,35 +89,50 @@ export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
         throw new Error(unwrapError(json, 'Failed to load tweets.'));
       }
       setData(json.data);
-      setSelectedMonth(pickActiveMonth(json.data.months, preferredMonth ?? null));
+      if (preferredGroupKey) {
+        setSelectedGroupKey(preferredGroupKey);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '加载推文数据失败。');
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  const months = data?.months ?? [];
-  const activeMonthRecord: TweetMonthRecord | null =
-    months.find((m) => m.month === selectedMonth) ?? null;
-  const currentMonthTweets = activeMonthRecord?.tweets ?? [];
-  const filteredTweets = filterTweets(currentMonthTweets, filter);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadDashboard();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadDashboard]);
+
+  const months = useMemo(() => data?.months ?? [], [data]);
+  const groups = useMemo(() => groupTweetsByGranularity(months, granularity), [months, granularity]);
+  const activeGroupKey = pickActiveDateGroup(groups, selectedGroupKey || null);
+  const activeGroup = groups.find((group) => group.key === activeGroupKey) ?? null;
+  const currentGroupTweets = activeGroup?.tweets ?? [];
+  const filteredTweets = filterTweets(currentGroupTweets, filter);
   const allTweets = months.flatMap((m) => m.tweets);
   const editingTweet = editingTweetId
     ? allTweets.find((t) => t.id === editingTweetId) ?? null
     : null;
   const totalTweetCount = months.reduce((sum, m) => sum + m.count, 0);
-  const publicCount = currentMonthTweets.filter((t) => (t.visibility ?? 'public') === 'public').length;
-  const privateCount = currentMonthTweets.filter((t) => (t.visibility ?? 'public') === 'private').length;
-  const hiddenCount = currentMonthTweets.filter((t) => (t.visibility ?? 'public') === 'hidden').length;
-  const pinnedCount = currentMonthTweets.filter((t) => t.pinned).length;
+  const publicCount = currentGroupTweets.filter((t) => (t.visibility ?? 'public') === 'public').length;
+  const privateCount = currentGroupTweets.filter((t) => (t.visibility ?? 'public') === 'private').length;
+  const hiddenCount = currentGroupTweets.filter((t) => (t.visibility ?? 'public') === 'hidden').length;
+  const pinnedCount = currentGroupTweets.filter((t) => t.pinned).length;
 
   const composerMonth = monthFromCreatedAt(form.createdAt);
   const targetMonthPath = composerMode
     ? composerMonth
       ? `tweets/${composerMonth}.json`
       : 'tweets/YYYY-MM.json'
-    : activeMonthRecord?.path ?? (selectedMonth ? `tweets/${selectedMonth}.json` : 'tweets/YYYY-MM.json');
+    : activeGroup
+      ? activeGroup.months.length === 1
+        ? `tweets/${activeGroup.months[0]}.json`
+        : `tweets/${activeGroup.months.length} files`
+      : 'tweets/YYYY-MM.json';
 
   const translationTargets = useMemo(
     () => getTranslationTargetLocales(form.lang as CreateTweetInput['lang']),
@@ -184,7 +198,7 @@ export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
 
   async function handleSubmit() {
     if (composerMode === 'edit' && editingTweet) {
-      const editMonth = monthFromCreatedAt(form.createdAt) || selectedMonth;
+      const editMonth = monthFromCreatedAt(form.createdAt) || activeGroup?.months[0] || '';
       const payload: UpdateTweetInput = {
         content: form.content,
         lang: form.lang as UpdateTweetInput['lang'],
@@ -230,8 +244,8 @@ export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
     setPendingDelete(null);
     const deleteMonth =
       editingTweetId === tweet.id
-        ? monthFromCreatedAt(form.createdAt) || selectedMonth
-        : selectedMonth;
+        ? monthFromCreatedAt(form.createdAt) || activeGroup?.months[0] || ''
+        : activeGroup?.months[0] || '';
     const result = await runMutation(
       `/api/admin/tweets/${tweet.id}`,
       { method: 'DELETE' },
@@ -259,7 +273,7 @@ export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
       if (!response.ok || !json.ok) {
         throw new Error(unwrapError(json, '自动翻译失败。'));
       }
-      await loadDashboard(json.data.month ?? selectedMonth);
+      await loadDashboard(activeGroupKey || json.data.month || selectedGroupKey);
       toast.success(`推文 ${editingTweet.id} 的自动译文已更新。`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '自动翻译失败。');
@@ -274,10 +288,15 @@ export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         <MonthIndexPanel
-          months={months}
-          activeMonth={selectedMonth}
-          onSelect={(month) => {
-            setSelectedMonth(month);
+          groups={groups}
+          activeGroupKey={activeGroupKey}
+          granularity={granularity}
+          onGranularityChange={(value) => {
+            setGranularity(value);
+            setFilter('all');
+          }}
+          onSelect={(key) => {
+            setSelectedGroupKey(key);
             setFilter('all');
           }}
         />
@@ -312,15 +331,15 @@ export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
           ) : null}
 
           <TweetListPanel
-            monthLabel={activeMonthRecord ? `${activeMonthRecord.month} 月份` : '推文列表'}
+            monthLabel={activeGroup ? formatDateGroupLabel(activeGroup.key, granularity) : '推文列表'}
             filter={filter}
             onFilterChange={setFilter}
             onCreate={startCreate}
             loading={loading}
             emptyHint={
-              !activeMonthRecord
-                ? '当前还没有任何月份数据，点击右上角“+”开始写第一条。'
-                : '当前月份在此筛选条件下没有推文。'
+              !activeGroup
+                ? '当前还没有任何时间范围数据，点击右上角“+”开始写第一条。'
+                : '当前时间范围在此筛选条件下没有推文。'
             }
             tweets={filteredTweets}
             onEdit={startEdit}

@@ -1,5 +1,6 @@
 import matter from 'gray-matter';
 import {
+  GitHubError,
   getFile,
   listBlogVariantPaths,
   putFile,
@@ -23,6 +24,24 @@ export type PublishInput = {
   accessGroup?: string;
   content: string;
   originLocale?: BlogLocale;
+};
+
+export type PublishVariantInput = {
+  locale: BlogLocale;
+  title: string;
+  excerpt: string;
+  tags: string[];
+  content: string;
+  originLocale?: BlogLocale;
+};
+
+export type PublishBatchInput = {
+  slug: string;
+  date: string;
+  pinned: boolean;
+  accessMode: AccessMode;
+  accessGroup?: string;
+  variants: PublishVariantInput[];
 };
 
 export type BlogIndexVariant = {
@@ -161,6 +180,27 @@ async function readExistingVariants(slug: string) {
   const paths = await listBlogVariantPaths();
   const variantPaths = paths.filter((path) => path.startsWith(`blog/${slug}/`));
   return Promise.all(variantPaths.map((path) => readBlogVariant(path)));
+}
+
+async function writeFileWithConflictRetry(params: {
+  path: string;
+  content: string;
+  message: string;
+  sha?: string;
+}) {
+  try {
+    return await putFile(params);
+  } catch (error) {
+    if (!(error instanceof GitHubError) || error.status !== 409) {
+      throw error;
+    }
+
+    const latest = await getFile(params.path);
+    return putFile({
+      ...params,
+      sha: latest?.sha,
+    });
+  }
 }
 
 function toIndexItem(slug: string, docs: BlogVariantDocument[]): BlogIndexItem {
@@ -309,72 +349,106 @@ export async function getBlogVariant(slug: string, locale: string) {
 }
 
 export async function publishPost(input: PublishInput) {
+  const result = await publishPostBatch({
+    slug: input.slug,
+    date: input.date,
+    pinned: input.pinned,
+    accessMode: input.accessMode,
+    accessGroup: input.accessGroup,
+    variants: [
+      {
+        locale: input.locale,
+        title: input.title,
+        excerpt: input.excerpt,
+        tags: input.tags,
+        content: input.content,
+        originLocale: input.originLocale,
+      },
+    ],
+  });
+
+  return {
+    path: result.paths[0] ?? '',
+    commits: result.commits,
+    revalidated: result.revalidated,
+  };
+}
+
+export async function publishPostBatch(input: PublishBatchInput) {
   const slug = normalizeSlug(input.slug);
-  const locale = normalizeLocale(input.locale);
   const date = normalizeDate(input.date);
-  const tags = normalizeTags(input.tags);
   const access = buildAccess(input.accessMode, input.accessGroup);
-  const originLocale =
-    input.originLocale && input.originLocale !== locale
-      ? normalizeLocale(input.originLocale)
-      : undefined;
   const timestamp = new Date().toISOString();
-  const currentPath = buildVariantPath(slug, locale);
   const existingVariants = await readExistingVariants(slug);
+  const existingByLocale = new Map(existingVariants.map((variant) => [variant.locale, variant]));
+  const requestedVariants = new Map<BlogLocale, PublishVariantInput>();
 
-  const currentExisting = existingVariants.find((variant) => variant.locale === locale);
+  for (const variant of input.variants) {
+    const locale = normalizeLocale(variant.locale);
+    requestedVariants.set(locale, {
+      ...variant,
+      locale,
+      tags: normalizeTags(variant.tags),
+      originLocale:
+        variant.originLocale && variant.originLocale !== locale
+          ? normalizeLocale(variant.originLocale)
+          : undefined,
+    });
+  }
 
-  const rewrittenExisting = existingVariants.filter((variant) => variant.locale !== locale);
+  if (requestedVariants.size === 0) {
+    throw new Error('At least one variant is required.');
+  }
 
-  await Promise.all(
-    rewrittenExisting.map((variant) =>
-      putFile({
-        path: variant.path,
-        sha: variant.sha,
-        message: `Sync blog metadata: ${slug}`,
-        content: buildMarkdown({
-          title:
-            typeof variant.data.title === 'string' && variant.data.title.trim()
-              ? variant.data.title
-              : slug,
-          excerpt:
-            typeof variant.data.excerpt === 'string' && variant.data.excerpt.trim()
-              ? variant.data.excerpt
-              : '',
-          date,
-          tags: Array.isArray(variant.data.tags) ? normalizeTags(variant.data.tags) : [],
-          pinned: input.pinned,
-          originLocale: variant.data.originLocale,
-          access,
-          updated: timestamp,
-          content: variant.content,
-        }),
-      }),
-    ),
-  );
+  const writes: Array<{ path: string; sha?: string; content: string; message: string }> = [];
 
-  const result = await putFile({
-    path: currentPath,
-    sha: currentExisting?.sha,
-    message: `${currentExisting?.sha ? 'Update' : 'Create'} blog variant: ${slug}/${locale}`,
-    content: buildMarkdown({
-      title: input.title,
-      excerpt: input.excerpt,
+  for (const locale of BLOG_LOCALES) {
+    const requested = requestedVariants.get(locale);
+    const existing = existingByLocale.get(locale);
+
+    if (!requested && !existing) {
+      continue;
+    }
+
+    const path = buildVariantPath(slug, locale);
+    const content = buildMarkdown({
+      title:
+        requested?.title ??
+        (typeof existing?.data.title === 'string' && existing.data.title.trim() ? existing.data.title : slug),
+      excerpt:
+        requested?.excerpt ??
+        (typeof existing?.data.excerpt === 'string' && existing.data.excerpt.trim() ? existing.data.excerpt : ''),
       date,
-      tags,
+      tags:
+        requested?.tags ??
+        (Array.isArray(existing?.data.tags) ? normalizeTags(existing.data.tags) : []),
       pinned: input.pinned,
-      originLocale,
+      originLocale:
+        requested?.originLocale ??
+        (existing?.data.originLocale ? normalizeLocale(existing.data.originLocale) : undefined),
       access,
       updated: timestamp,
-      content: input.content,
-    }),
-  });
+      content: requested?.content ?? existing?.content ?? '',
+    });
+
+    writes.push({
+      path,
+      sha: existing?.sha,
+      message: `${existing?.sha ? 'Update' : 'Create'} blog variant: ${slug}/${locale}`,
+      content,
+    });
+  }
+
+  const commits = [];
+  for (const write of writes) {
+    commits.push(await writeFileWithConflictRetry(write));
+  }
 
   const rebuilt = await rebuildBlogIndex(slug);
 
   return {
-    path: currentPath,
-    commit: result,
+    paths: writes.map((write) => write.path),
+    commits,
     revalidated: rebuilt.revalidated,
   };
 }

@@ -67,7 +67,6 @@ export default function LoginPage() {
                   <Input
                     type="password"
                     autoComplete="current-password"
-                    placeholder="••••••••"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                   />
@@ -77,7 +76,6 @@ export default function LoginPage() {
                   <Input
                     inputMode="numeric"
                     autoComplete="one-time-code"
-                    placeholder="123456"
                     value={totpToken}
                     maxLength={6}
                     onChange={(event) => setTotpToken(event.target.value.replace(/\D/g, '').slice(0, 6))}
