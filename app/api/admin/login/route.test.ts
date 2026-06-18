@@ -10,6 +10,8 @@ const ORIGINAL_ENV = {
   ADMIN_TOTP_JSON: process.env.ADMIN_TOTP_JSON,
   NODE_ENV: process.env.NODE_ENV,
   ADMIN_TOTP_ENFORCE_IN_DEV: process.env.ADMIN_TOTP_ENFORCE_IN_DEV,
+  ADMIN_TOTP_DEV_BYPASS: process.env.ADMIN_TOTP_DEV_BYPASS,
+  TRUST_PROXY: process.env.TRUST_PROXY,
 };
 const ORIGINAL_NOW = Date.now;
 let mockedNow = 0;
@@ -27,6 +29,11 @@ beforeEach(() => {
   });
   process.env.NODE_ENV = 'production';
   delete process.env.ADMIN_TOTP_ENFORCE_IN_DEV;
+  delete process.env.ADMIN_TOTP_DEV_BYPASS;
+  // Treat the forwarded IP as authentic so each test gets its own per-IP
+  // bucket — otherwise the global bucket collapses every request into one
+  // bucket and trips after a handful of attempts.
+  process.env.TRUST_PROXY = '1';
 });
 
 afterEach(() => {
@@ -79,8 +86,18 @@ describe('POST /api/admin/login', () => {
     expect(payload.amr).toBe('password+totp');
   });
 
-  it('allows password-only login in development when bypass is active', async () => {
+  it('still requires TOTP in development by default', async () => {
     process.env.NODE_ENV = 'development';
+    const response = await POST(createRequest({ password: 'correct horse battery staple' }));
+    const json = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(json).toMatchObject({ ok: false, error: { message: '缺少 TOTP 验证码。' } });
+  });
+
+  it('only allows password-only login in development when ADMIN_TOTP_DEV_BYPASS is explicitly set', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.ADMIN_TOTP_DEV_BYPASS = '1';
     const response = await POST(createRequest({ password: 'correct horse battery staple' }));
     const sessionCookie = response.cookies.get('arsvine_admin_session');
 
@@ -91,15 +108,16 @@ describe('POST /api/admin/login', () => {
     expect(payload.amr).toBe('password+totp-dev-bypass');
   });
 
-  it('returns a configuration error when production TOTP config is missing', async () => {
+  it('returns a generic error and never leaks configuration details when TOTP config is missing', async () => {
     delete process.env.ADMIN_TOTP_JSON;
-    const response = await POST(createRequest({ password: 'correct horse battery staple', totpToken: '123456' }));
+    const code = computeCodeForStep(FIXED_SECRET, BigInt(Math.floor(mockedNow / 1000 / 30)), 6);
+    const response = await POST(createRequest({ password: 'correct horse battery staple', totpToken: code }));
     const json = await response.json();
 
     expect(response.status).toBe(500);
     expect(json).toMatchObject({
       ok: false,
-      error: { message: expect.stringContaining('管理员 TOTP 配置无效') },
+      error: { message: '登录失败，请稍后重试。' },
     });
   });
 });

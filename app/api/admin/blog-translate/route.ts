@@ -2,11 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { getSessionFromRequest, verifyCsrf } from '../../../../lib/auth';
 import { buildBlogTranslations } from '../../../../lib/blog-translation';
+import { getClientKey } from '../../../../lib/client-key';
 import { enforceRateLimit } from '../../../../lib/rate-limit';
-
-function getClientKey(request: NextRequest) {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-}
 
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);

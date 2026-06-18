@@ -1,12 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSessionFromRequest, verifyCsrf } from '../../../../../../lib/auth';
+import { getClientKey } from '../../../../../../lib/client-key';
 import { enforceRateLimit } from '../../../../../../lib/rate-limit';
 import { retranslateTweet, StoreError } from '../../../../../../lib/tweets';
 import { triggerTweetsRevalidate } from '../../../../../../lib/github';
-
-function getClientKey(request: NextRequest) {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-}
 
 function toErrorResponse(error: unknown, fallbackMessage: string) {
   if (error instanceof StoreError) {

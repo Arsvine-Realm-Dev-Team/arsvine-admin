@@ -8,6 +8,7 @@ const ORIGINAL_ENV = {
   ADMIN_PASSWORD_HASH: process.env.ADMIN_PASSWORD_HASH,
   NODE_ENV: process.env.NODE_ENV,
   ADMIN_TOTP_ENFORCE_IN_DEV: process.env.ADMIN_TOTP_ENFORCE_IN_DEV,
+  ADMIN_TOTP_DEV_BYPASS: process.env.ADMIN_TOTP_DEV_BYPASS,
 };
 
 beforeEach(() => {
@@ -15,6 +16,7 @@ beforeEach(() => {
   process.env.ADMIN_PASSWORD_HASH = makePasswordHash('correct horse battery staple');
   process.env.NODE_ENV = 'test';
   delete process.env.ADMIN_TOTP_ENFORCE_IN_DEV;
+  delete process.env.ADMIN_TOTP_DEV_BYPASS;
 });
 
 afterEach(() => {
@@ -75,8 +77,8 @@ describe('sessions', () => {
 describe('adminTotpRequired', () => {
   it('tracks the development bypass flag through auth exports', () => {
     process.env.NODE_ENV = 'development';
-    expect(adminTotpRequired()).toBe(false);
-    process.env.ADMIN_TOTP_ENFORCE_IN_DEV = '1';
     expect(adminTotpRequired()).toBe(true);
+    process.env.ADMIN_TOTP_DEV_BYPASS = '1';
+    expect(adminTotpRequired()).toBe(false);
   });
 });

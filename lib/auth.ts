@@ -128,10 +128,22 @@ export function clearAuthCookies(response: NextResponse) {
   });
 }
 
+function constantTimeStringEqual(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
 export function verifyCsrf(request: NextRequest, session: AdminSession) {
   const headerToken = request.headers.get('x-csrf-token')?.trim();
   const cookieToken = request.cookies.get(CSRF_COOKIE)?.value?.trim();
-  return Boolean(headerToken && cookieToken && headerToken === cookieToken && headerToken === session.csrf);
+  if (!headerToken || !cookieToken) return false;
+  return (
+    constantTimeStringEqual(headerToken, cookieToken) &&
+    constantTimeStringEqual(headerToken, session.csrf)
+  );
 }
 
 export function verifyPassword(password: string) {

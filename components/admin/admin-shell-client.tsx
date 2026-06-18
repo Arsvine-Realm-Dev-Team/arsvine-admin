@@ -31,6 +31,7 @@ type NavItem = {
 
 type AdminShellClientProps = {
   currentPath: string;
+  csrfToken: string;
   sessionExpiresAt: number;
   children: ReactNode;
 };
@@ -42,6 +43,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export default function AdminShellClient({
   currentPath,
+  csrfToken,
   sessionExpiresAt,
   children,
 }: AdminShellClientProps) {
@@ -49,7 +51,10 @@ export default function AdminShellClient({
 
   const handleLogout = () => {
     startTransition(async () => {
-      await fetch('/api/admin/logout', { method: 'POST' });
+      await fetch('/api/admin/logout', {
+        method: 'POST',
+        headers: { 'x-csrf-token': csrfToken },
+      });
       window.location.href = '/login';
     });
   };

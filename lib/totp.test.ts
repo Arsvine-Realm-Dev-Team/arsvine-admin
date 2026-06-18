@@ -7,6 +7,7 @@ const ORIGINAL_ENV = {
   NODE_ENV: process.env.NODE_ENV,
   ADMIN_TOTP_JSON: process.env.ADMIN_TOTP_JSON,
   ADMIN_TOTP_ENFORCE_IN_DEV: process.env.ADMIN_TOTP_ENFORCE_IN_DEV,
+  ADMIN_TOTP_DEV_BYPASS: process.env.ADMIN_TOTP_DEV_BYPASS,
 };
 const ORIGINAL_NOW = Date.now;
 let mockedNow = 0;
@@ -16,6 +17,7 @@ beforeEach(() => {
   Date.now = () => mockedNow;
   delete process.env.ADMIN_TOTP_JSON;
   delete process.env.ADMIN_TOTP_ENFORCE_IN_DEV;
+  delete process.env.ADMIN_TOTP_DEV_BYPASS;
   process.env.NODE_ENV = 'test';
 });
 
@@ -27,6 +29,8 @@ afterEach(() => {
   else process.env.ADMIN_TOTP_JSON = ORIGINAL_ENV.ADMIN_TOTP_JSON;
   if (ORIGINAL_ENV.ADMIN_TOTP_ENFORCE_IN_DEV === undefined) delete process.env.ADMIN_TOTP_ENFORCE_IN_DEV;
   else process.env.ADMIN_TOTP_ENFORCE_IN_DEV = ORIGINAL_ENV.ADMIN_TOTP_ENFORCE_IN_DEV;
+  if (ORIGINAL_ENV.ADMIN_TOTP_DEV_BYPASS === undefined) delete process.env.ADMIN_TOTP_DEV_BYPASS;
+  else process.env.ADMIN_TOTP_DEV_BYPASS = ORIGINAL_ENV.ADMIN_TOTP_DEV_BYPASS;
 });
 
 function setAdminTotp(config: Record<string, unknown>) {
@@ -77,19 +81,27 @@ describe('admin TOTP config', () => {
 });
 
 describe('isAdminTotpRequired', () => {
-  it('defaults to disabled in non-production', () => {
+  it('is required by default in non-production', () => {
     process.env.NODE_ENV = 'development';
+    delete process.env.ADMIN_TOTP_DEV_BYPASS;
+    expect(isAdminTotpRequired()).toBe(true);
+  });
+
+  it('can be bypassed in non-production only when ADMIN_TOTP_DEV_BYPASS is set', () => {
+    process.env.NODE_ENV = 'development';
+    process.env.ADMIN_TOTP_DEV_BYPASS = '1';
     expect(isAdminTotpRequired()).toBe(false);
   });
 
-  it('can be forced on in development', () => {
-    process.env.NODE_ENV = 'development';
-    process.env.ADMIN_TOTP_ENFORCE_IN_DEV = 'true';
+  it('ignores ADMIN_TOTP_DEV_BYPASS in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.ADMIN_TOTP_DEV_BYPASS = '1';
     expect(isAdminTotpRequired()).toBe(true);
   });
 
   it('is always required in production', () => {
     process.env.NODE_ENV = 'production';
+    delete process.env.ADMIN_TOTP_DEV_BYPASS;
     expect(isAdminTotpRequired()).toBe(true);
   });
 });
