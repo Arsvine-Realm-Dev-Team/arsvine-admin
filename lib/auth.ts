@@ -5,7 +5,12 @@ import { isAdminTotpRequired, verifyAdminTotpToken } from './totp';
 
 const SESSION_COOKIE = 'arsvine_admin_session';
 const CSRF_COOKIE = 'arsvine_admin_csrf';
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
+// 12 hours. The admin console can write to the GitHub content repo, trigger
+// public-site revalidate, and call the translation API — i.e. it carries
+// production write authority. A long-lived session (e.g. 7 days) is comfy
+// but trades safety for convenience; 12 hours covers a single working day
+// without forcing mid-task logouts.
+const SESSION_TTL_SECONDS = 60 * 60 * 12;
 
 export type AdminAuthMethod = 'password' | 'password+totp' | 'password+totp-dev-bypass';
 

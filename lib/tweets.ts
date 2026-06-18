@@ -21,6 +21,11 @@ import {
   listTweetMonthPaths,
   putFile,
 } from './github';
+import {
+  InputValidationError,
+  sanitizeCommitMessage,
+  validateTweetId,
+} from './input-validation';
 
 const SHANGHAI_TIMEZONE = 'Asia/Shanghai';
 const INDEX_PATH = 'tweets/index.json';
@@ -241,6 +246,7 @@ async function loadMonthRecords(): Promise<TweetMonthRecord[]> {
 }
 
 async function saveMonthRecords(records: TweetMonthRecord[], message = 'chore: update tweets') {
+  const safeMessage = sanitizeCommitMessage(message);
   try {
     const sortedRecords = [...records].sort((a, b) => b.month.localeCompare(a.month));
     const existingMonthPaths = await listTweetMonthPaths();
@@ -248,12 +254,12 @@ async function saveMonthRecords(records: TweetMonthRecord[], message = 'chore: u
 
     for (const filePath of existingMonthPaths) {
       if (!nextMonthPaths.has(filePath)) {
-        await deleteJsonFile(filePath, message);
+        await deleteJsonFile(filePath, safeMessage);
       }
     }
 
     for (const record of sortedRecords) {
-      await writeJsonFile(buildMonthPath(record.month), record.tweets, message);
+      await writeJsonFile(buildMonthPath(record.month), record.tweets, safeMessage);
     }
 
     const index: TweetIndexItem[] = sortedRecords.map((record) => ({
@@ -263,21 +269,34 @@ async function saveMonthRecords(records: TweetMonthRecord[], message = 'chore: u
       updatedAt: record.updatedAt,
     }));
 
-    await writeJsonFile(INDEX_PATH, index, message);
+    await writeJsonFile(INDEX_PATH, index, safeMessage);
   } catch (error) {
     throw toStoreError(error);
   }
 }
 
 function findTweet(records: TweetMonthRecord[], tweetId: string) {
+  // Tweet ids are server-generated as `YYYYMMDD-NNN`. Validate the URL
+  // segment before letting it touch comparison loops or commit messages —
+  // a stray `/` or control char would otherwise propagate into GitHub.
+  let validatedId: string;
+  try {
+    validatedId = validateTweetId(tweetId);
+  } catch (error) {
+    if (error instanceof InputValidationError) {
+      throw new StoreError(error.status, 'Invalid tweet id.');
+    }
+    throw error;
+  }
+
   for (const record of records) {
-    const tweetIndex = record.tweets.findIndex((tweet) => tweet.id === tweetId);
+    const tweetIndex = record.tweets.findIndex((tweet) => tweet.id === validatedId);
     if (tweetIndex !== -1) {
       return { record, tweetIndex };
     }
   }
 
-  throw new StoreError(404, `Tweet not found: ${tweetId}`);
+  throw new StoreError(404, 'Tweet not found.');
 }
 
 function buildTweet(

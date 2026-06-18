@@ -9,7 +9,8 @@ import {
 import { getClientKey } from '../../../../lib/client-key';
 import { enforceRateLimit } from '../../../../lib/rate-limit';
 
-const GENERIC_LOGIN_ERROR = '登录失败，请稍后重试。';
+const GENERIC_LOGIN_ERROR = '登录失败，请检查凭据。';
+const GENERIC_SERVER_ERROR = '登录失败，请稍后重试。';
 
 function isConfigurationError(error: unknown) {
   if (!(error instanceof Error)) return false;
@@ -22,6 +23,18 @@ function isConfigurationError(error: unknown) {
     error.message === 'ADMIN_TOTP_JSON.current is required.' ||
     error.message === 'ADMIN_TOTP_JSON.previous must be an array when provided.' ||
     error.message === 'Missing SESSION_SECRET'
+  );
+}
+
+// All credential failures collapse to a single generic 401 — never reveal
+// which factor failed, whether TOTP is enforced, or whether a field was
+// missing vs wrong. The exact reason is logged server-side so operators
+// can still diagnose problems.
+function genericFailure(reason: string) {
+  console.warn(`[admin/login] auth failure: ${reason}`);
+  return NextResponse.json(
+    { ok: false, error: { message: GENERIC_LOGIN_ERROR } },
+    { status: 401 },
   );
 }
 
@@ -54,17 +67,11 @@ export async function POST(request: NextRequest) {
     const totpToken = typeof body.totpToken === 'string' ? body.totpToken.trim() : '';
 
     if (!password) {
-      return NextResponse.json(
-        { ok: false, error: { message: '缺少密码。' } },
-        { status: 422 },
-      );
+      return genericFailure('missing password');
     }
 
     if (!verifyPassword(password)) {
-      return NextResponse.json(
-        { ok: false, error: { message: '密码错误。' } },
-        { status: 401 },
-      );
+      return genericFailure('wrong password');
     }
 
     const totpRequired = adminTotpRequired();
@@ -72,26 +79,17 @@ export async function POST(request: NextRequest) {
 
     if (totpRequired) {
       if (!totpToken) {
-        return NextResponse.json(
-          { ok: false, error: { message: '缺少 TOTP 验证码。' } },
-          { status: 422 },
-        );
+        return genericFailure('missing TOTP token (required)');
       }
 
       if (!verifyAdminTotp(totpToken)) {
-        return NextResponse.json(
-          { ok: false, error: { message: 'TOTP 验证码无效或已过期。' } },
-          { status: 401 },
-        );
+        return genericFailure('wrong TOTP token (required)');
       }
 
       authMethod = 'password+totp';
     } else if (totpToken) {
       if (!verifyAdminTotp(totpToken)) {
-        return NextResponse.json(
-          { ok: false, error: { message: 'TOTP 验证码无效或已过期。' } },
-          { status: 401 },
-        );
+        return genericFailure('wrong TOTP token (optional, dev)');
       }
 
       authMethod = 'password+totp';
@@ -111,7 +109,7 @@ export async function POST(request: NextRequest) {
       console.error('[admin/login] unexpected error:', error);
     }
     return NextResponse.json(
-      { ok: false, error: { message: GENERIC_LOGIN_ERROR } },
+      { ok: false, error: { message: GENERIC_SERVER_ERROR } },
       { status: 500 },
     );
   }

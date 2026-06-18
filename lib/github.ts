@@ -210,11 +210,12 @@ export async function triggerTweetsRevalidate() {
   }
 
   try {
-    const url = new URL(PUBLIC_TWEETS_REVALIDATE_URL);
-    url.searchParams.set('secret', PUBLIC_REVALIDATE_SECRET);
-
-    const response = await fetch(url.toString(), {
-      method: 'GET',
+    // POST + body so the shared secret never enters access logs the way a
+    // GET querystring would.
+    const response = await fetch(PUBLIC_TWEETS_REVALIDATE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: PUBLIC_REVALIDATE_SECRET }),
     });
 
     if (!response.ok) {

@@ -6,6 +6,11 @@ import {
   putFile,
   triggerPublicRevalidate,
 } from './github';
+import {
+  validateAccessGroup,
+  validateBlogSlug,
+  sanitizeCommitMessage,
+} from './input-validation';
 
 export const BLOG_LOCALES = ['zh-CN', 'zh-TW', 'en', 'ja', 'ru', 'fr'] as const;
 
@@ -90,11 +95,9 @@ type BlogVariantDocument = {
 };
 
 function normalizeSlug(value: string) {
-  const slug = value.trim().toLowerCase();
-  if (!/^[a-z0-9-]+$/.test(slug)) {
-    throw new Error('Slug must use lowercase letters, numbers, and hyphens only.');
-  }
-  return slug;
+  // Stricter than the legacy `[a-z0-9-]+` regex — disallows leading,
+  // trailing, and consecutive hyphens, plus a hard length cap.
+  return validateBlogSlug(value);
 }
 
 function normalizeDate(value: string) {
@@ -122,11 +125,12 @@ function buildVariantPath(slug: string, locale: BlogLocale) {
 
 function buildAccess(accessMode: AccessMode, accessGroup?: string) {
   if (accessMode === 'totp') {
-    const group = accessGroup?.trim();
-    if (!group) {
+    if (accessGroup === undefined || accessGroup === null) {
       throw new Error('Protected posts require an access group.');
     }
-    return { mode: 'totp' as const, group };
+    // White-list characters; rejects spaces, control chars, slashes, and
+    // anything that could confuse a cookie name or TOTP config map key.
+    return { mode: 'totp' as const, group: validateAccessGroup(accessGroup) };
   }
 
   return { mode: 'public' as const };
@@ -299,7 +303,7 @@ export async function rebuildBlogIndex(slug?: string) {
   await putFile({
     path: 'blog-index.json',
     content: `${JSON.stringify(index, null, 2)}\n`,
-    message: 'Rebuild blog index',
+    message: sanitizeCommitMessage('Rebuild blog index'),
     sha: existing?.sha,
   });
 
@@ -434,7 +438,9 @@ export async function publishPostBatch(input: PublishBatchInput) {
     writes.push({
       path,
       sha: existing?.sha,
-      message: `${existing?.sha ? 'Update' : 'Create'} blog variant: ${slug}/${locale}`,
+      message: sanitizeCommitMessage(
+        `${existing?.sha ? 'Update' : 'Create'} blog variant: ${slug}/${locale}`,
+      ),
       content,
     });
   }

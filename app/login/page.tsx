@@ -55,7 +55,7 @@ export default function LoginPage() {
           <CardDescription>Admin Login</CardDescription>
           <CardTitle>ARSVINE ADMIN</CardTitle>
           <p className="text-sm text-muted-foreground">
-            输入管理员密码与 6 位 TOTP 验证码以进入写作与发布后台。生产与 Preview 环境强制启用双因素认证；本地 dev 默认允许不填验证码。
+            输入管理员凭据以进入写作与发布后台。
           </p>
         </CardHeader>
         <CardContent>

@@ -11,6 +11,25 @@ type BlogPreviewPanelProps = {
   content: string;
 };
 
+// Block dangerous URL schemes from anchor `href` and image `src`. Even though
+// react-markdown does not parse raw HTML by default (so `<script>` is shown
+// as text), Markdown's `[label](url)` syntax gladly turns `javascript:` URLs
+// into clickable anchors — pasted AI translations or external Markdown could
+// trip us up. White-list the schemes a blog post should ever need.
+const SAFE_SCHEMES = /^(https?:|mailto:|tel:|#|\/)/i;
+
+function sanitizeUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  // Allow protocol-relative + relative paths; block javascript:, data:,
+  // vbscript:, file:, anything else exotic.
+  if (trimmed.startsWith('//') || SAFE_SCHEMES.test(trimmed) || !trimmed.includes(':')) {
+    return trimmed;
+  }
+  return undefined;
+}
+
 function buildPreviewContent(content: string) {
   if (!content) {
     return '*在左侧输入 Markdown，这里会实时预览。*';
@@ -64,16 +83,30 @@ export default function BlogPreviewPanel({ content }: BlogPreviewPanelProps) {
                   <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.9em]">{children}</code>
                 ),
                 hr: () => <hr className="border-border" />,
-                a: ({ href, children }) => (
-                  <a
-                    href={href}
-                    className="text-primary underline underline-offset-4"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {children}
-                  </a>
-                ),
+                a: ({ href, children }) => {
+                  const safe = sanitizeUrl(href);
+                  if (!safe) {
+                    return <span className="text-muted-foreground line-through">{children}</span>;
+                  }
+                  return (
+                    <a
+                      href={safe}
+                      className="text-primary underline underline-offset-4"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {children}
+                    </a>
+                  );
+                },
+                img: ({ src, alt }) => {
+                  const safe = sanitizeUrl(src);
+                  if (!safe) {
+                    return <span className="text-muted-foreground italic">[blocked image]</span>;
+                  }
+                  // eslint-disable-next-line @next/next/no-img-element
+                  return <img src={safe} alt={alt ?? ''} className="max-w-full rounded" />;
+                },
               }}
             >
               {preview}

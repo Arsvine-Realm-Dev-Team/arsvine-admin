@@ -52,12 +52,36 @@ function createRequest(body: Record<string, unknown>, forwardedFor = `1.2.3.${Ma
 }
 
 describe('POST /api/admin/login', () => {
-  it('requires a TOTP token in production', async () => {
+  it('rejects missing password with the generic 401 error', async () => {
+    const response = await POST(createRequest({}));
+    const json = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(json).toMatchObject({ ok: false, error: { message: '登录失败，请检查凭据。' } });
+  });
+
+  it('rejects wrong password with the generic 401 error', async () => {
+    const response = await POST(createRequest({ password: 'nope' }));
+    const json = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(json).toMatchObject({ ok: false, error: { message: '登录失败，请检查凭据。' } });
+  });
+
+  it('rejects missing TOTP token in production with the generic 401 error', async () => {
     const response = await POST(createRequest({ password: 'correct horse battery staple' }));
     const json = await response.json();
 
-    expect(response.status).toBe(422);
-    expect(json).toMatchObject({ ok: false, error: { message: '缺少 TOTP 验证码。' } });
+    expect(response.status).toBe(401);
+    expect(json).toMatchObject({ ok: false, error: { message: '登录失败，请检查凭据。' } });
+  });
+
+  it('rejects wrong TOTP token in production with the generic 401 error', async () => {
+    const response = await POST(createRequest({ password: 'correct horse battery staple', totpToken: '000000' }));
+    const json = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(json).toMatchObject({ ok: false, error: { message: '登录失败，请检查凭据。' } });
   });
 
   it('creates a session when password and TOTP are valid', async () => {
@@ -72,8 +96,13 @@ describe('POST /api/admin/login', () => {
 
     const payload = JSON.parse(Buffer.from(sessionCookie!.value, 'base64url').toString('utf8')) as {
       amr: string;
+      exp: number;
     };
     expect(payload.amr).toBe('password+totp');
+    // 12-hour TTL — give a generous tolerance window for clock arithmetic.
+    const ttlMs = payload.exp - mockedNow;
+    expect(ttlMs).toBeGreaterThan(11 * 60 * 60 * 1000);
+    expect(ttlMs).toBeLessThanOrEqual(12 * 60 * 60 * 1000);
   });
 
   it('still requires TOTP in development by default', async () => {
@@ -81,8 +110,8 @@ describe('POST /api/admin/login', () => {
     const response = await POST(createRequest({ password: 'correct horse battery staple' }));
     const json = await response.json();
 
-    expect(response.status).toBe(422);
-    expect(json).toMatchObject({ ok: false, error: { message: '缺少 TOTP 验证码。' } });
+    expect(response.status).toBe(401);
+    expect(json).toMatchObject({ ok: false, error: { message: '登录失败，请检查凭据。' } });
   });
 
   it('only allows password-only login in development when ADMIN_TOTP_DEV_BYPASS is explicitly set', async () => {
