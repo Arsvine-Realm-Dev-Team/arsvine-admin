@@ -29,4 +29,11 @@ describe('POST /api/admin/login', () => {
     const response = await POST(request({ email: 'owner@example.com', password: 'correct', totpToken: '123456' }));
     expect(response.status).toBe(200); expect(response.cookies.get('arsvine_admin_session')?.value).toBeTruthy(); expect(response.cookies.get('arsvine_admin_csrf')?.value).toBeTruthy();
   });
+  it('accepts a configured previous TOTP secret during rotation', async () => {
+    vi.mocked(decryptSecret).mockReturnValue(JSON.stringify({ current: 'CURRENT', previous: ['PREVIOUS'] }));
+    vi.mocked(verifyTotp).mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const response = await POST(request({ email: 'owner@example.com', password: 'correct', totpToken: '123456' }));
+    expect(response.status).toBe(200);
+    expect(verifyTotp).toHaveBeenCalledTimes(2);
+  });
 });

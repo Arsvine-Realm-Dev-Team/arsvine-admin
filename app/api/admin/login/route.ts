@@ -31,6 +31,18 @@ function genericFailure(reason: string) {
   );
 }
 
+function verifyAccountTotp(token: string, config: TotpSecretConfig) {
+  return [config.current, ...(config.previous ?? [])].some((secretBase32) =>
+    verifyTotp({
+      token,
+      secretBase32,
+      period: config.period,
+      digits: config.digits,
+      window: config.window,
+    }),
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Per-IP bucket — caps any single (possibly spoofed) X-Forwarded-For.
@@ -70,7 +82,7 @@ export async function POST(request: NextRequest) {
       return genericFailure('wrong password');
     }
     const totp = JSON.parse(decryptSecret(account.totpEncrypted)) as TotpSecretConfig;
-    if (!verifyTotp({ token: totpToken, secretBase32: totp.current, period: totp.period, digits: totp.digits, window: totp.window })) {
+    if (!verifyAccountTotp(totpToken, totp)) {
       return genericFailure('wrong TOTP token');
     }
 
