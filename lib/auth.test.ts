@@ -1,75 +1,40 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { scryptSync } from 'node:crypto';
+
+vi.mock('./accounts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./accounts')>();
+  return { ...actual, getActiveAccount: vi.fn() };
+});
+
+import { getActiveAccount, hashPassword, verifyPasswordHash } from './accounts';
+import { createSession, getSessionFromRequest } from './auth';
 import { NextRequest } from 'next/server';
-import { adminTotpRequired, createSession, getSessionFromRequest, verifyPassword } from './auth';
 
-beforeEach(() => {
-  // `vi.stubEnv` works around Next.js' readonly typing of NODE_ENV and
-  // is automatically rolled back by `vi.unstubAllEnvs()` in afterEach.
-  vi.stubEnv('SESSION_SECRET', 'test-session-secret');
-  vi.stubEnv('ADMIN_PASSWORD_HASH', makePasswordHash('correct horse battery staple'));
-  vi.stubEnv('NODE_ENV', 'test');
-  vi.stubEnv('ADMIN_TOTP_ENFORCE_IN_DEV', '');
-  vi.stubEnv('ADMIN_TOTP_DEV_BYPASS', '');
-});
+beforeEach(() => { vi.stubEnv('SESSION_SECRET', 'test-session-secret'); });
+afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
-function makePasswordHash(password: string) {
-  const salt = 'test-salt';
-  const hash = scryptSync(password, salt, 64).toString('base64url');
-  return `scrypt$${salt}$${hash}`;
-}
-
-describe('verifyPassword', () => {
-  it('accepts the configured password hash', () => {
-    expect(verifyPassword('correct horse battery staple')).toBe(true);
-  });
-
-  it('rejects a wrong password', () => {
-    expect(verifyPassword('wrong password')).toBe(false);
+describe('password hashes', () => {
+  it('accepts the generated hash and rejects a wrong password', () => {
+    const encoded = hashPassword('correct horse battery staple');
+    expect(verifyPasswordHash('correct horse battery staple', encoded)).toBe(true);
+    expect(verifyPasswordHash('wrong password', encoded)).toBe(false);
   });
 });
 
-describe('sessions', () => {
-  it('creates a signed session carrying the auth method', () => {
-    const session = createSession('password+totp');
-    const request = new NextRequest('http://localhost/blog', {
-      headers: { cookie: `arsvine_admin_session=${session.value}` },
-    });
-    expect(getSessionFromRequest(request)).toMatchObject({
-      sub: 'admin',
-      csrf: session.csrf,
-      exp: session.exp,
-      amr: 'password+totp',
-    });
+describe('signed sessions', () => {
+  it('resolves an active account with the same session version', async () => {
+    const account = { id: '00000000-0000-4000-8000-000000000001', email: 'owner@example.com', role: 'owner' as const, sessionVersion: 2, status: 'active' as const };
+    vi.mocked(getActiveAccount).mockResolvedValue(account as never);
+    const session = createSession(account);
+    const request = new NextRequest('http://localhost/library', { headers: { cookie: `arsvine_admin_session=${session.value}` } });
+    await expect(getSessionFromRequest(request)).resolves.toMatchObject({ userId: account.id, email: account.email, role: 'owner', sessionVersion: 2, csrf: session.csrf });
   });
 
-  it('invalidates tampered sessions', () => {
-    const session = createSession('password+totp');
-    const raw = JSON.parse(Buffer.from(session.value, 'base64url').toString('utf8')) as {
-      sub: string;
-      exp: number;
-      csrf: string;
-      amr: string;
-      sig: string;
-    };
-    raw.amr = 'password';
-    const tampered = Buffer.from(JSON.stringify(raw), 'utf8').toString('base64url');
-    const request = new NextRequest('http://localhost/blog', {
-      headers: { cookie: `arsvine_admin_session=${tampered}` },
-    });
-    expect(getSessionFromRequest(request)).toBeNull();
-  });
-});
-
-describe('adminTotpRequired', () => {
-  it('tracks the development bypass flag through auth exports', () => {
-    vi.stubEnv('NODE_ENV', 'development');
-    expect(adminTotpRequired()).toBe(true);
-    vi.stubEnv('ADMIN_TOTP_DEV_BYPASS', '1');
-    expect(adminTotpRequired()).toBe(false);
+  it('rejects a tampered session before querying the account', async () => {
+    const session = createSession({ id: '00000000-0000-4000-8000-000000000001', role: 'owner', sessionVersion: 1 });
+    const raw = JSON.parse(Buffer.from(session.value, 'base64url').toString('utf8')) as Record<string, unknown>;
+    raw.role = 'editor';
+    const request = new NextRequest('http://localhost/library', { headers: { cookie: `arsvine_admin_session=${Buffer.from(JSON.stringify(raw)).toString('base64url')}` } });
+    await expect(getSessionFromRequest(request)).resolves.toBeNull();
+    expect(getActiveAccount).not.toHaveBeenCalled();
   });
 });

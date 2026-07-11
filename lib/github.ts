@@ -1,10 +1,4 @@
-const OWNER = process.env.GITHUB_OWNER?.trim();
-const REPO = process.env.GITHUB_REPO?.trim();
-const BRANCH = process.env.GITHUB_BRANCH?.trim() || 'main';
-const WRITE_TOKEN = process.env.GITHUB_WRITE_TOKEN?.trim();
-const PUBLIC_REVALIDATE_URL = process.env.PUBLIC_REVALIDATE_URL?.trim();
-const PUBLIC_REVALIDATE_SECRET = process.env.PUBLIC_REVALIDATE_SECRET?.trim();
-const PUBLIC_TWEETS_REVALIDATE_URL = process.env.PUBLIC_TWEETS_REVALIDATE_URL?.trim();
+import { getWorkspace } from './workspace-context';
 
 type GitHubContentResponse = {
   sha: string;
@@ -27,29 +21,30 @@ export class GitHubError extends Error {
   }
 }
 
-function assertEnv() {
-  if (!OWNER) throw new Error('Missing GITHUB_OWNER');
-  if (!REPO) throw new Error('Missing GITHUB_REPO');
-  if (!WRITE_TOKEN) throw new Error('Missing GITHUB_WRITE_TOKEN');
+function config() {
+  const workspace = getWorkspace();
+  const { owner, repo, branch, token } = workspace.github;
+  if (!owner || !repo || !token) throw new Error('私有仓库配置不完整。');
+  return { workspace, owner, repo, branch: branch || 'main', token };
 }
 
 function contentUrl(path: string) {
-  assertEnv();
-  return `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}?ref=${encodeURIComponent(BRANCH)}`;
+  const { owner, repo, branch } = config();
+  return `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`;
 }
 
 function treeUrl() {
-  assertEnv();
-  return `https://api.github.com/repos/${OWNER}/${REPO}/git/trees/${encodeURIComponent(BRANCH)}?recursive=1`;
+  const { owner, repo, branch } = config();
+  return `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`;
 }
 
 async function githubFetch(url: string, init?: RequestInit) {
-  assertEnv();
+  const { token } = config();
   const response = await fetch(url, {
     ...init,
     headers: {
       Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${WRITE_TOKEN}`,
+      Authorization: `Bearer ${token}`,
       'X-GitHub-Api-Version': '2022-11-28',
       'User-Agent': 'arsvine-admin',
       ...(init?.headers ?? {}),
@@ -60,12 +55,12 @@ async function githubFetch(url: string, init?: RequestInit) {
 }
 
 export function getContentRepoInfo() {
-  assertEnv();
+  const { owner, repo, branch } = config();
   return {
-    owner: OWNER as string,
-    repo: REPO as string,
-    branch: BRANCH,
-    url: `https://github.com/${OWNER}/${REPO}`,
+    owner,
+    repo,
+    branch,
+    url: `https://github.com/${owner}/${repo}`,
   };
 }
 
@@ -101,7 +96,7 @@ export async function putFile(params: {
     body: JSON.stringify({
       message: params.message,
       content: Buffer.from(params.content, 'utf8').toString('base64'),
-      branch: BRANCH,
+      branch: config().branch,
       sha: params.sha,
     }),
   });
@@ -130,7 +125,7 @@ export async function deleteFile(params: {
     },
     body: JSON.stringify({
       message: params.message,
-      branch: BRANCH,
+      branch: config().branch,
       sha: params.sha,
     }),
   });
@@ -172,17 +167,18 @@ export async function listTweetMonthPaths() {
 }
 
 export async function triggerPublicRevalidate(slug?: string) {
-  if (!PUBLIC_REVALIDATE_URL || !PUBLIC_REVALIDATE_SECRET) {
-    throw new Error('Missing PUBLIC_REVALIDATE_URL or PUBLIC_REVALIDATE_SECRET');
+  const { contentUrl, secret } = getWorkspace().revalidate;
+  if (!contentUrl || !secret) {
+    throw new Error('站点刷新配置不完整。');
   }
 
-  const response = await fetch(PUBLIC_REVALIDATE_URL, {
+  const response = await fetch(contentUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      secret: PUBLIC_REVALIDATE_SECRET,
+      secret,
       ...(slug ? { slug } : {}),
     }),
   });
@@ -198,10 +194,11 @@ export async function triggerPublicRevalidate(slug?: string) {
 }
 
 export async function triggerTweetsRevalidate() {
-  if (!PUBLIC_TWEETS_REVALIDATE_URL) {
+  const { tweetsUrl, secret } = getWorkspace().revalidate;
+  if (!tweetsUrl) {
     return undefined;
   }
-  if (!PUBLIC_REVALIDATE_SECRET) {
+  if (!secret) {
     return {
       revalidated: false,
       paths: [],
@@ -212,10 +209,10 @@ export async function triggerTweetsRevalidate() {
   try {
     // POST + body so the shared secret never enters access logs the way a
     // GET querystring would.
-    const response = await fetch(PUBLIC_TWEETS_REVALIDATE_URL, {
+    const response = await fetch(tweetsUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret: PUBLIC_REVALIDATE_SECRET }),
+      body: JSON.stringify({ secret }),
     });
 
     if (!response.ok) {

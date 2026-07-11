@@ -5,6 +5,7 @@ import { enforceRateLimit } from '../../../../lib/rate-limit';
 import { createTweet, getDashboardData, StoreError } from '../../../../lib/tweets';
 import { triggerTweetsRevalidate } from '../../../../lib/github';
 import type { CreateTweetInput } from '../../../../lib/tweets-types';
+import { withSessionWorkspace } from '../../../../lib/request-auth';
 
 function toErrorResponse(error: unknown, fallbackMessage: string) {
   if (error instanceof StoreError) {
@@ -21,7 +22,7 @@ function toErrorResponse(error: unknown, fallbackMessage: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const session = getSessionFromRequest(request);
+  const session = await getSessionFromRequest(request);
   if (!session) {
     return NextResponse.json(
       { ok: false, error: { message: 'Unauthorized' } },
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const data = await getDashboardData();
+    const data = await withSessionWorkspace(session, () => getDashboardData());
     return NextResponse.json({ ok: true, data });
   } catch (error) {
     return toErrorResponse(error, 'Failed to load tweets.');
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = getSessionFromRequest(request);
+  const session = await getSessionFromRequest(request);
   if (!session) {
     return NextResponse.json(
       { ok: false, error: { message: 'Unauthorized' } },
@@ -63,8 +64,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const input = (await request.json()) as CreateTweetInput;
-    const data = await createTweet(input);
-    const revalidated = await triggerTweetsRevalidate();
+    const { data, revalidated } = await withSessionWorkspace(session, async () => {
+      const data = await createTweet(input);
+      return { data, revalidated: await triggerTweetsRevalidate() };
+    });
     return NextResponse.json({ ok: true, data: { ...data, revalidated } }, { status: 201 });
   } catch (error) {
     return toErrorResponse(error, 'Failed to create tweet.');

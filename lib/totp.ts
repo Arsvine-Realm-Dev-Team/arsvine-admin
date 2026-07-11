@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 export type TotpSecretConfig = {
   current: string;
@@ -9,6 +9,18 @@ export type TotpSecretConfig = {
 };
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+export function generateTotpSecret(byteLength = 20) {
+  const bytes = randomBytes(byteLength);
+  let bits = '';
+  for (const byte of bytes) bits += byte.toString(2).padStart(8, '0');
+  let result = '';
+  for (let offset = 0; offset < bits.length; offset += 5) {
+    const group = bits.slice(offset, offset + 5).padEnd(5, '0');
+    result += BASE32_ALPHABET[Number.parseInt(group, 2)];
+  }
+  return result;
+}
 
 function isTruthyEnv(value: string | undefined) {
   return value === '1' || value?.toLowerCase() === 'true';

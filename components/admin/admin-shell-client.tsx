@@ -1,6 +1,6 @@
 'use client';
 
-import { LogOut, MessageCircle, FileText } from 'lucide-react';
+import { LogOut, MessageCircle, FileText, Library, Settings, Users } from 'lucide-react';
 import { useTransition, type ReactNode } from 'react';
 
 import {
@@ -33,18 +33,24 @@ type AdminShellClientProps = {
   currentPath: string;
   csrfToken: string;
   sessionExpiresAt: number;
+  email: string;
+  role: 'owner' | 'editor';
   children: ReactNode;
 };
 
 const NAV_ITEMS: NavItem[] = [
+  { href: '/library', label: '内容库', icon: <Library /> },
   { href: '/blog', label: 'Blog', icon: <FileText /> },
   { href: '/tweets', label: 'Tweets', icon: <MessageCircle /> },
+  { href: '/workspace', label: '我的工作区', icon: <Settings /> },
 ];
 
 export default function AdminShellClient({
   currentPath,
   csrfToken,
   sessionExpiresAt,
+  email,
+  role,
   children,
 }: AdminShellClientProps) {
   const [pending, startTransition] = useTransition();
@@ -81,7 +87,7 @@ export default function AdminShellClient({
             <SidebarGroupLabel>Modules</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {NAV_ITEMS.map((item) => (
+                {[...NAV_ITEMS, ...(role === 'owner' ? [{ href: '/members', label: '成员', icon: <Users /> }] : [])].map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
                       render={<a href={item.href} />}
@@ -99,11 +105,10 @@ export default function AdminShellClient({
         </SidebarContent>
         <SidebarFooter>
           <div className="flex flex-col gap-2 px-2 py-2 text-xs text-muted-foreground">
-            <div className="flex items-center justify-between group-data-[collapsible=icon]:hidden">
-              <span>SESSION</span>
-              <span className="font-mono text-foreground/80">
-                {new Date(sessionExpiresAt).toLocaleString('zh-CN', { hour12: false })}
-              </span>
+            <div className="group-data-[collapsible=icon]:hidden">
+              <div className="truncate text-foreground">{email}</div>
+              <div>{role === 'owner' ? '唯一管理员' : '编辑'}</div>
+              <div>会话至 {new Date(sessionExpiresAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
             </div>
             <Button
               type="button"

@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSessionFromRequest } from '../../../../lib/auth';
 import { getBlogVariant } from '../../../../lib/posts';
+import { withSessionWorkspace } from '../../../../lib/request-auth';
 
 export async function GET(request: NextRequest) {
-  const session = getSessionFromRequest(request);
+  const session = await getSessionFromRequest(request);
   if (!session) {
     return NextResponse.json(
       { ok: false, error: { message: 'Unauthorized' } },
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const data = await getBlogVariant(slug, locale);
+    const data = await withSessionWorkspace(session, () => getBlogVariant(slug, locale));
     if (!data) {
       return NextResponse.json(
         { ok: false, error: { message: 'Variant not found.' } },

@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSessionFromRequest, verifyCsrf } from '../../../../lib/auth';
 import { rebuildBlogIndex } from '../../../../lib/posts';
+import { withSessionWorkspace } from '../../../../lib/request-auth';
 
 export async function POST(request: NextRequest) {
-  const session = getSessionFromRequest(request);
+  const session = await getSessionFromRequest(request);
   if (!session) {
     return NextResponse.json(
       { ok: false, error: { message: 'Unauthorized' } },
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const data = await rebuildBlogIndex();
+    const data = await withSessionWorkspace(session, () => rebuildBlogIndex());
     return NextResponse.json({ ok: true, data });
   } catch (error) {
     return NextResponse.json(

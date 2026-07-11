@@ -8,6 +8,7 @@ import {
     type TweetLang,
     type TweetTranslation,
 } from './tweets-types';
+import { getWorkspace } from './workspace-context';
 
 const PROMPTS_DIR = path.join(process.cwd(), 'prompts');
 const DEFAULT_MODEL = 'deepseek-v4-flash';
@@ -66,17 +67,18 @@ function toShanghaiIso(value: Date | string) {
 }
 
 function getTranslationApiConfig() {
-    const baseUrl = process.env.AI_TRANSLATION_BASE_URL?.trim();
-    const apiKey = process.env.AI_TRANSLATION_API_KEY?.trim();
-    const model = process.env.AI_TRANSLATION_MODEL?.trim() || DEFAULT_MODEL;
-    const thinking = process.env.AI_TRANSLATION_THINKING?.trim();
-    const reasoningEffort = process.env.AI_TRANSLATION_REASONING_EFFORT?.trim();
+    const translation = getWorkspace().translation;
+    const baseUrl = translation?.baseUrl.trim();
+    const apiKey = translation?.apiKey.trim();
+    const model = translation?.model?.trim() || DEFAULT_MODEL;
+    const thinking = translation?.thinking?.trim();
+    const reasoningEffort = translation?.reasoningEffort?.trim();
 
     if (!baseUrl) {
-        throw new Error('Missing AI_TRANSLATION_BASE_URL');
+        throw new Error('请先配置个人翻译服务。');
     }
     if (!apiKey) {
-        throw new Error('Missing AI_TRANSLATION_API_KEY');
+        throw new Error('请先配置个人翻译服务密钥。');
     }
 
     if (thinking && thinking !== 'enabled' && thinking !== 'disabled') {

@@ -1,183 +1,92 @@
-import { randomBytes, createHmac, timingSafeEqual, scryptSync } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import type { NextRequest, NextResponse } from 'next/server';
-import { isAdminTotpRequired, verifyAdminTotpToken } from './totp';
+import { getActiveAccount } from './accounts';
 
 const SESSION_COOKIE = 'arsvine_admin_session';
 const CSRF_COOKIE = 'arsvine_admin_csrf';
-// 12 hours. The admin console can write to the GitHub content repo, trigger
-// public-site revalidate, and call the translation API — i.e. it carries
-// production write authority. A long-lived session (e.g. 7 days) is comfy
-// but trades safety for convenience; 12 hours covers a single working day
-// without forcing mid-task logouts.
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 
-export type AdminAuthMethod = 'password' | 'password+totp' | 'password+totp-dev-bypass';
-
-type AdminSession = {
-  sub: 'admin';
-  exp: number;
+export type AuthMethod = 'password+totp';
+export type AuthenticatedSession = {
+  userId: string;
+  email: string;
+  role: 'owner' | 'editor';
   csrf: string;
-  amr: AdminAuthMethod;
-  sig: string;
+  exp: number;
+  sessionVersion: number;
+  amr: AuthMethod;
 };
+
+type SignedSession = Omit<AuthenticatedSession, 'email'> & { sig: string };
 
 function getSessionSecret() {
   const secret = process.env.SESSION_SECRET?.trim();
-  if (!secret) {
-    throw new Error('Missing SESSION_SECRET');
-  }
+  if (!secret) throw new Error('Missing SESSION_SECRET');
   return secret;
 }
 
-function signSession(sub: string, exp: number, csrf: string, amr: AdminAuthMethod) {
+function signSession(session: Omit<SignedSession, 'sig'>) {
   return createHmac('sha256', getSessionSecret())
-    .update(`${sub}:${exp}:${csrf}:${amr}`)
+    .update(`${session.userId}:${session.role}:${session.sessionVersion}:${session.exp}:${session.csrf}:${session.amr}`)
     .digest('base64url');
 }
 
-function encodeSession(session: AdminSession) {
-  return Buffer.from(JSON.stringify(session), 'utf8').toString('base64url');
+function decode(value: string) {
+  try { return JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as SignedSession; } catch { return null; }
 }
 
-function decodeSession(value: string) {
-  try {
-    return JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as AdminSession;
-  } catch {
-    return null;
-  }
+function validSignature(session: SignedSession | null): session is SignedSession {
+  if (!session || session.exp <= Date.now()) return false;
+  const expected = Buffer.from(signSession(session));
+  const actual = Buffer.from(session.sig);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-export function createSession(amr: AdminAuthMethod = 'password') {
+export function createSession(account: { id: string; role: 'owner' | 'editor'; sessionVersion: number }) {
   const csrf = randomBytes(18).toString('base64url');
-  const exp = Date.now() + SESSION_TTL_SECONDS * 1000;
-  const session: AdminSession = {
-    sub: 'admin',
-    exp,
-    csrf,
-    amr,
-    sig: signSession('admin', exp, csrf, amr),
-  };
-
-  return {
-    value: encodeSession(session),
-    csrf,
-    exp,
-  };
+  const unsigned = { userId: account.id, role: account.role, sessionVersion: account.sessionVersion, exp: Date.now() + SESSION_TTL_SECONDS * 1000, csrf, amr: 'password+totp' as const };
+  return { value: Buffer.from(JSON.stringify({ ...unsigned, sig: signSession(unsigned) }), 'utf8').toString('base64url'), csrf, exp: unsigned.exp };
 }
 
-function isSessionValid(session: AdminSession | null): session is AdminSession {
-  if (!session || session.sub !== 'admin' || session.exp <= Date.now()) {
-    return false;
-  }
-
-  const expected = signSession(session.sub, session.exp, session.csrf, session.amr);
-  const left = Buffer.from(session.sig);
-  const right = Buffer.from(expected);
-
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return timingSafeEqual(left, right);
+async function resolve(value: string | undefined): Promise<AuthenticatedSession | null> {
+  const parsed = value ? decode(value) : null;
+  if (!validSignature(parsed)) return null;
+  const account = await getActiveAccount(parsed.userId);
+  if (!account || account.role !== parsed.role || account.sessionVersion !== parsed.sessionVersion) return null;
+  return { ...parsed, email: account.email };
 }
 
-export function getSessionFromRequest(request: NextRequest) {
-  const raw = request.cookies.get(SESSION_COOKIE)?.value;
-  const session = raw ? decodeSession(raw) : null;
-  return isSessionValid(session) ? session : null;
+export async function getSessionFromRequest(request: NextRequest) {
+  return resolve(request.cookies.get(SESSION_COOKIE)?.value);
 }
 
 export async function getSessionFromCookieStore() {
-  const cookieStore = await cookies();
-  const raw = cookieStore.get(SESSION_COOKIE)?.value;
-  const session = raw ? decodeSession(raw) : null;
-  return isSessionValid(session) ? session : null;
+  const store = await cookies();
+  return resolve(store.get(SESSION_COOKIE)?.value);
 }
 
 export function applyAuthCookies(response: NextResponse, session: ReturnType<typeof createSession>) {
   const secure = process.env.NODE_ENV === 'production';
-
-  response.cookies.set(SESSION_COOKIE, session.value, {
-    httpOnly: true,
-    secure,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: SESSION_TTL_SECONDS,
-  });
-
-  response.cookies.set(CSRF_COOKIE, session.csrf, {
-    httpOnly: false,
-    secure,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: SESSION_TTL_SECONDS,
-  });
+  response.cookies.set(SESSION_COOKIE, session.value, { httpOnly: true, secure, sameSite: 'lax', path: '/', maxAge: SESSION_TTL_SECONDS });
+  response.cookies.set(CSRF_COOKIE, session.csrf, { httpOnly: false, secure, sameSite: 'lax', path: '/', maxAge: SESSION_TTL_SECONDS });
 }
 
 export function clearAuthCookies(response: NextResponse) {
   const secure = process.env.NODE_ENV === 'production';
-  response.cookies.set(SESSION_COOKIE, '', {
-    httpOnly: true,
-    secure,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-  });
-  response.cookies.set(CSRF_COOKIE, '', {
-    httpOnly: false,
-    secure,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-  });
+  for (const name of [SESSION_COOKIE, CSRF_COOKIE]) response.cookies.set(name, '', { httpOnly: name === SESSION_COOKIE, secure, sameSite: 'lax', path: '/', maxAge: 0 });
 }
 
-function constantTimeStringEqual(a: string, b: string) {
-  if (a.length !== b.length) return false;
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
+function constantTimeEqual(leftValue: string, rightValue: string) {
+  const left = Buffer.from(leftValue);
+  const right = Buffer.from(rightValue);
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
-export function verifyCsrf(request: NextRequest, session: AdminSession) {
-  const headerToken = request.headers.get('x-csrf-token')?.trim();
-  const cookieToken = request.cookies.get(CSRF_COOKIE)?.value?.trim();
-  if (!headerToken || !cookieToken) return false;
-  return (
-    constantTimeStringEqual(headerToken, cookieToken) &&
-    constantTimeStringEqual(headerToken, session.csrf)
-  );
+export function verifyCsrf(request: NextRequest, session: AuthenticatedSession) {
+  const header = request.headers.get('x-csrf-token')?.trim();
+  const cookie = request.cookies.get(CSRF_COOKIE)?.value?.trim();
+  return Boolean(header && cookie && constantTimeEqual(header, cookie) && constantTimeEqual(header, session.csrf));
 }
 
-export function verifyPassword(password: string) {
-  const encoded = process.env.ADMIN_PASSWORD_HASH?.trim();
-  if (!encoded) {
-    throw new Error('Missing ADMIN_PASSWORD_HASH');
-  }
-
-  const match = /^scrypt\$([^$]+)\$([^$]+)$/.exec(encoded);
-  if (!match) {
-    throw new Error('ADMIN_PASSWORD_HASH must be generated by the provided script.');
-  }
-
-  const [, salt, expectedHash] = match;
-  const actualHash = scryptSync(password, salt, 64).toString('base64url');
-  const left = Buffer.from(actualHash);
-  const right = Buffer.from(expectedHash);
-
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return timingSafeEqual(left, right);
-}
-
-export function verifyAdminTotp(token: string) {
-  return verifyAdminTotpToken(token);
-}
-
-export function adminTotpRequired() {
-  return isAdminTotpRequired();
-}
+export function isOwner(session: AuthenticatedSession) { return session.role === 'owner'; }

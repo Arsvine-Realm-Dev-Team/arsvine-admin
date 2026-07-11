@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const session = getSessionFromRequest(request);
+  const session = await getSessionFromRequest(request);
   if (!session) {
     return NextResponse.json(
       { ok: false, error: { message: 'Unauthorized' } },
@@ -25,7 +25,9 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     data: {
-      sub: session.sub,
+      userId: session.userId,
+      email: session.email,
+      role: session.role,
       exp: session.exp,
       csrf: session.csrf,
       amr: session.amr,

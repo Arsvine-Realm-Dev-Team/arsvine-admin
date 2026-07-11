@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
   // user agent — without CSRF protection, a malicious page could quietly
   // sign the admin out. We require both a valid session and a matching CSRF
   // token, mirroring the rest of the admin write surface.
-  const session = getSessionFromRequest(request);
+  const session = await getSessionFromRequest(request);
   if (!session) {
     return NextResponse.json(
       { ok: false, error: { message: 'Unauthorized' } },

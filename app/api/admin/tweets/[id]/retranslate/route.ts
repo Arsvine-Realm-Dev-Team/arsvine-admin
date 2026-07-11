@@ -4,6 +4,7 @@ import { getClientKey } from '../../../../../../lib/client-key';
 import { enforceRateLimit } from '../../../../../../lib/rate-limit';
 import { retranslateTweet, StoreError } from '../../../../../../lib/tweets';
 import { triggerTweetsRevalidate } from '../../../../../../lib/github';
+import { withSessionWorkspace } from '../../../../../../lib/request-auth';
 
 function toErrorResponse(error: unknown, fallbackMessage: string) {
   if (error instanceof StoreError) {
@@ -23,7 +24,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const session = getSessionFromRequest(request);
+  const session = await getSessionFromRequest(request);
   if (!session) {
     return NextResponse.json(
       { ok: false, error: { message: 'Unauthorized' } },
@@ -48,8 +49,7 @@ export async function POST(
 
   try {
     const { id } = await context.params;
-    const data = await retranslateTweet(id);
-    const revalidated = await triggerTweetsRevalidate();
+    const { data, revalidated } = await withSessionWorkspace(session, async () => ({ data: await retranslateTweet(id), revalidated: await triggerTweetsRevalidate() }));
     return NextResponse.json({ ok: true, data: { ...data, revalidated } });
   } catch (error) {
     return toErrorResponse(error, 'Failed to retranslate tweet.');

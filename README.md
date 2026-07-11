@@ -1,18 +1,19 @@
 # ARSVINE ADMIN
 
-Web-only admin console for the private content repository.
+Web-only, privacy-preserving content console for private repositories.
 
 ## What It Does
 
-- administrator password + TOTP login
+- closed multi-user accounts: one Owner and invited Editors, all with password + TOTP
 - signed `HttpOnly` session cookie + readable CSRF cookie
 - Markdown writing and live preview
-- publish `blog/<slug>/<locale>.mdx` variants into the private GitHub content repo
+- publish `blog/<slug>/<locale>.mdx` variants into each member's private GitHub content repo
 - auto-translate `zh-CN` blog variants into `zh-TW` / `en` drafts using the shared MDX guide
 - rebuild `blog-index.json`
 - manage `tweets/index.json` and `tweets/YYYY-MM.json` from `/tweets`
 - auto-translate and retranslate tweets
 - call the public site's `/api/revalidate-content` and `/api/revalidate`
+- Neon Postgres for accounts, invitations and encrypted private workspace configuration
 - persistent rate limiting on Vercel via Upstash Redis (with local fallback)
 - `@vercel/analytics` page analytics
 
@@ -20,12 +21,21 @@ Web-only admin console for the private content repository.
 
 See [.env.example](./.env.example).
 
+## First deployment and migration
+
+1. Add the Neon integration through the Vercel Marketplace so `DATABASE_URL` is provided.
+2. Set `OWNER_ADMIN_EMAIL` and a stable `WORKSPACE_SECRETS_ENCRYPTION_KEY` (32 random bytes encoded as base64url), alongside `SESSION_SECRET`, `ADMIN_PASSWORD_HASH`, and `ADMIN_TOTP_JSON`.
+3. Run `pnpm db:migrate` after pulling the configured environment locally, or run the generated SQL migration through the Neon console.
+4. The first login creates the unique Owner and imports the existing GitHub, revalidation, and translation variables into that Owner's encrypted workspace. Thereafter, each member manages their own settings at `/workspace`.
+
+The Owner can invite Editors from `/members`. Invitations are single-use, expire after 72 hours, and are delivered by copying the generated link. The Owner never receives an API or UI surface for members' repository settings, content, drafts, or translation credentials.
+
 ## Password Hash
 
 Generate `ADMIN_PASSWORD_HASH` with:
 
 ```bash
-npm run hash-password -- "your-password"
+pnpm hash-password -- "your-password"
 ```
 
 The script prints an `ADMIN_PASSWORD_HASH=...` line that is safe to paste directly into Next's `.env.local`.
@@ -61,12 +71,16 @@ When stored in `.env.local`, each `$` must be escaped as `\$`, otherwise Next wi
 - On Vercel, configure `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` so limits persist across cold starts and multiple instances.
 - If Upstash is missing or temporarily unavailable, the app falls back to a process-local `Map`. That fallback is acceptable for local development, but not strong enough as the only production layer.
 
-## Admin Routes
+## Console Routes
 
-- `/login`: administrator login
+- `/login`: account login
+- `/library`: personal content library (default)
 - `/blog`: blog writing and publishing console
 - `/tweets`: tweet publishing panel
-- `/`: redirects to `/blog`
+- `/workspace`: private repository and translation configuration
+- `/members`: Owner-only invitations and account lifecycle
+- `/activate`: invite acceptance and TOTP enrollment
+- `/`: redirects to `/library`
 
 ## Vercel Deployment
 

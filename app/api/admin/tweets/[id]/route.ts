@@ -5,6 +5,7 @@ import { enforceRateLimit } from '../../../../../lib/rate-limit';
 import { deleteTweet, StoreError, updateTweet } from '../../../../../lib/tweets';
 import { triggerTweetsRevalidate } from '../../../../../lib/github';
 import type { UpdateTweetInput } from '../../../../../lib/tweets-types';
+import { withSessionWorkspace } from '../../../../../lib/request-auth';
 
 function toErrorResponse(error: unknown, fallbackMessage: string) {
   if (error instanceof StoreError) {
@@ -21,7 +22,7 @@ function toErrorResponse(error: unknown, fallbackMessage: string) {
 }
 
 async function requireWriteAccess(request: NextRequest) {
-  const session = getSessionFromRequest(request);
+  const session = await getSessionFromRequest(request);
   if (!session) {
     return {
       error: NextResponse.json(
@@ -50,7 +51,7 @@ async function requireWriteAccess(request: NextRequest) {
     };
   }
 
-  return { error: null };
+  return { error: null, session };
 }
 
 export async function PUT(
@@ -63,8 +64,7 @@ export async function PUT(
   try {
     const { id } = await context.params;
     const input = (await request.json()) as UpdateTweetInput;
-    const data = await updateTweet(id, input);
-    const revalidated = await triggerTweetsRevalidate();
+    const { data, revalidated } = await withSessionWorkspace(access.session!, async () => ({ data: await updateTweet(id, input), revalidated: await triggerTweetsRevalidate() }));
     return NextResponse.json({ ok: true, data: { ...data, revalidated } });
   } catch (error) {
     return toErrorResponse(error, 'Failed to update tweet.');
@@ -80,8 +80,7 @@ export async function DELETE(
 
   try {
     const { id } = await context.params;
-    const data = await deleteTweet(id);
-    const revalidated = await triggerTweetsRevalidate();
+    const { data, revalidated } = await withSessionWorkspace(access.session!, async () => ({ data: await deleteTweet(id), revalidated: await triggerTweetsRevalidate() }));
     return NextResponse.json({ ok: true, data: { ...data, revalidated } });
   } catch (error) {
     return toErrorResponse(error, 'Failed to delete tweet.');

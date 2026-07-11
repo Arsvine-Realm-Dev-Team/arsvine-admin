@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSessionFromRequest } from '../../../../lib/auth';
 import { getBlogIndex } from '../../../../lib/posts';
+import { withSessionWorkspace } from '../../../../lib/request-auth';
 
 export async function GET(request: NextRequest) {
-  const session = getSessionFromRequest(request);
+  const session = await getSessionFromRequest(request);
   if (!session) {
     return NextResponse.json(
       { ok: false, error: { message: 'Unauthorized' } },
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const data = await getBlogIndex();
+    const data = await withSessionWorkspace(session, () => getBlogIndex());
     return NextResponse.json({ ok: true, data });
   } catch (error) {
     return NextResponse.json(

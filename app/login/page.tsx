@@ -22,6 +22,7 @@ async function readLoginResponse(response: Response): Promise<LoginResponse | nu
 }
 
 export default function LoginPage() {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [totpToken, setTotpToken] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -34,7 +35,7 @@ export default function LoginPage() {
       const response = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password, totpToken }),
+        body: JSON.stringify({ email, password, totpToken }),
       });
       const json = await readLoginResponse(response);
       if (!response.ok || !json?.ok) {
@@ -62,6 +63,15 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <FieldSet>
               <FieldGroup>
+                <Field>
+                  <FieldLabel>邮箱地址</FieldLabel>
+                  <Input
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                  />
+                </Field>
                 <Field>
                   <FieldLabel>管理员密码</FieldLabel>
                   <Input

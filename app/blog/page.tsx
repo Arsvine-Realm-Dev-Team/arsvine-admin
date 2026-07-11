@@ -11,7 +11,7 @@ export default async function BlogPage() {
   }
 
   return (
-    <AdminShell csrfToken={session.csrf} sessionExpiresAt={session.exp}>
+    <AdminShell csrfToken={session.csrf} sessionExpiresAt={session.exp} email={session.email} role={session.role}>
       <BlogPageClient csrfToken={session.csrf} />
     </AdminShell>
   );

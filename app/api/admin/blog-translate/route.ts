@@ -4,9 +4,10 @@ import { getSessionFromRequest, verifyCsrf } from '../../../../lib/auth';
 import { buildBlogTranslations } from '../../../../lib/blog-translation';
 import { getClientKey } from '../../../../lib/client-key';
 import { enforceRateLimit } from '../../../../lib/rate-limit';
+import { withSessionWorkspace } from '../../../../lib/request-auth';
 
 export async function POST(request: NextRequest) {
-  const session = getSessionFromRequest(request);
+  const session = await getSessionFromRequest(request);
   if (!session) {
     return NextResponse.json(
       { ok: false, error: { message: 'Unauthorized' } },
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
       targetLocales?: Array<'zh-TW' | 'en'>;
     };
 
-    const data = await buildBlogTranslations(body);
+    const data = await withSessionWorkspace(session, () => buildBlogTranslations(body));
     return NextResponse.json({ ok: true, data: { variants: data } });
   } catch (error) {
     return NextResponse.json(
