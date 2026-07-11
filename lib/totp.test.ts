@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { getAdminTotpConfig, isAdminTotpRequired, verifyAdminTotpToken, verifyTotp } from './totp';
+import { createTotpUri, getAdminTotpConfig, isAdminTotpRequired, verifyAdminTotpToken, verifyTotp } from './totp';
 
 const FIXED_SECRET = 'JBSWY3DPEHPK3PXP';
 const ORIGINAL_NOW = Date.now;
@@ -42,6 +42,14 @@ describe('verifyTotp', () => {
   it('rejects malformed tokens', () => {
     expect(verifyTotp({ token: '12345', secretBase32: FIXED_SECRET, nowMs: mockedNow })).toBe(false);
     expect(verifyTotp({ token: 'abcdef', secretBase32: FIXED_SECRET, nowMs: mockedNow })).toBe(false);
+  });
+});
+
+describe('createTotpUri', () => {
+  it('creates a standard TOTP URI with an encoded label and explicit parameters', () => {
+    expect(createTotpUri({ email: 'Editor+one@example.com', secret: FIXED_SECRET })).toBe(
+      'otpauth://totp/ARSVINE%20Admin%3Aeditor%2Bone%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=ARSVINE+Admin&algorithm=SHA1&digits=6&period=30',
+    );
   });
 });
 

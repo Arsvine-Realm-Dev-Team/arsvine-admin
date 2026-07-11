@@ -5,7 +5,6 @@ import type { ReactNode } from 'react';
 
 type AdminShellProps = {
   csrfToken: string;
-  sessionExpiresAt: number;
   email: string;
   role: 'owner' | 'editor';
   children: ReactNode;
@@ -13,7 +12,6 @@ type AdminShellProps = {
 
 export default async function AdminShell({
   csrfToken,
-  sessionExpiresAt,
   email,
   role,
   children,
@@ -25,7 +23,6 @@ export default async function AdminShell({
     <AdminShellClient
       currentPath={currentPath}
       csrfToken={csrfToken}
-      sessionExpiresAt={sessionExpiresAt}
       email={email}
       role={role}
     >

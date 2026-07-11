@@ -16,8 +16,6 @@ import {
 
 import ComposerPanel, { INITIAL_TWEET_FORM, type TweetFormState } from './composer-panel';
 import MonthIndexPanel from './month-index-panel';
-import RepositoryPanel from './repository-panel';
-import StatsStrip from './stats-strip';
 import TweetListPanel from './tweet-list-panel';
 import { VISIBILITY_LABELS } from './filter-labels';
 import {
@@ -117,11 +115,6 @@ export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
   const editingTweet = editingTweetId
     ? allTweets.find((t) => t.id === editingTweetId) ?? null
     : null;
-  const totalTweetCount = months.reduce((sum, m) => sum + m.count, 0);
-  const publicCount = currentGroupTweets.filter((t) => (t.visibility ?? 'public') === 'public').length;
-  const privateCount = currentGroupTweets.filter((t) => (t.visibility ?? 'public') === 'private').length;
-  const hiddenCount = currentGroupTweets.filter((t) => (t.visibility ?? 'public') === 'hidden').length;
-  const pinnedCount = currentGroupTweets.filter((t) => t.pinned).length;
 
   const composerMonth = monthFromCreatedAt(form.createdAt);
   const targetMonthPath = composerMode
@@ -283,11 +276,10 @@ export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      <RepositoryPanel data={data} targetPath={targetMonthPath} />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <MonthIndexPanel
+    <div className="min-h-[calc(100svh-3.5rem)] p-5 lg:p-8">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b pb-4"><div><p className="text-sm text-muted-foreground">Tweets / <span className="font-mono text-xs">{targetMonthPath}</span></p><h1 className="mt-1 text-2xl font-semibold tracking-tight">推文编辑</h1></div></div>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <aside className="lg:border-r lg:pr-5"><MonthIndexPanel
           groups={groups}
           activeGroupKey={activeGroupKey}
           granularity={granularity}
@@ -299,17 +291,9 @@ export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
             setSelectedGroupKey(key);
             setFilter('all');
           }}
-        />
+        /></aside>
 
-        <div className="flex flex-col gap-4">
-          <StatsStrip
-            total={totalTweetCount}
-            publicCount={publicCount}
-            privateCount={privateCount}
-            hiddenCount={hiddenCount}
-            pinnedCount={pinnedCount}
-          />
-
+        <section className="min-w-0">
           {composerMode ? (
             <ComposerPanel
               mode={composerMode}
@@ -345,7 +329,7 @@ export default function TweetsPageClient({ csrfToken }: TweetsPageClientProps) {
             onEdit={startEdit}
             onDelete={(tweet) => setPendingDelete(tweet)}
           />
-        </div>
+        </section>
       </div>
 
       <AlertDialog

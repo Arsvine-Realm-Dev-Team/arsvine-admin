@@ -8,6 +8,7 @@ import type { WorkspaceConfig } from './workspace-context';
 
 export type Account = typeof users.$inferSelect;
 export type PublicMember = Pick<Account, 'id' | 'email' | 'role' | 'status' | 'createdAt' | 'updatedAt'>;
+export type PublicInvitation = Pick<typeof invitations.$inferSelect, 'id' | 'email' | 'status' | 'expiresAt' | 'createdAt'>;
 
 const INVITATION_TTL_MS = 72 * 60 * 60 * 1000;
 
@@ -124,6 +125,19 @@ export async function createInvitation(actorId: string, rawEmail: string) {
 
 export async function listMembers(): Promise<PublicMember[]> {
   return getDb().select({ id: users.id, email: users.email, role: users.role, status: users.status, createdAt: users.createdAt, updatedAt: users.updatedAt }).from(users).orderBy(asc(users.createdAt));
+}
+
+export async function listPendingInvitations(): Promise<PublicInvitation[]> {
+  return getDb().select({ id: invitations.id, email: invitations.email, status: invitations.status, expiresAt: invitations.expiresAt, createdAt: invitations.createdAt })
+    .from(invitations).where(eq(invitations.status, 'pending')).orderBy(asc(invitations.createdAt));
+}
+
+export async function revokeInvitation(actorId: string, invitationId: string) {
+  const db = getDb();
+  const [invite] = await db.select().from(invitations).where(eq(invitations.id, invitationId)).limit(1);
+  if (!invite || invite.status !== 'pending') throw new Error('邀请不存在或已失效。');
+  await db.update(invitations).set({ status: 'revoked' }).where(eq(invitations.id, invitationId));
+  await db.insert(accountEvents).values({ actorId, type: 'revoked_invitation' });
 }
 
 export async function validateInvitation(token: string) {

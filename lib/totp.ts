@@ -22,6 +22,25 @@ export function generateTotpSecret(byteLength = 20) {
   return result;
 }
 
+export function createTotpUri(params: {
+  email: string;
+  secret: string;
+  issuer?: string;
+  period?: number;
+  digits?: number;
+}) {
+  const issuer = params.issuer ?? 'ARSVINE Admin';
+  const label = `${issuer}:${params.email.trim().toLowerCase()}`;
+  const search = new URLSearchParams({
+    secret: params.secret,
+    issuer,
+    algorithm: 'SHA1',
+    digits: String(params.digits ?? 6),
+    period: String(params.period ?? 30),
+  });
+  return `otpauth://totp/${encodeURIComponent(label)}?${search.toString()}`;
+}
+
 function isTruthyEnv(value: string | undefined) {
   return value === '1' || value?.toLowerCase() === 'true';
 }

@@ -546,8 +546,10 @@ export default function BlogPageClient({ csrfToken }: BlogPageClientProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 p-4 lg:h-[calc(100vh-3.5rem)] lg:grid-cols-[220px_440px_minmax(0,1fr)]">
-      <div className="min-h-0">
+    <div className="min-h-[calc(100svh-3.5rem)] p-5 lg:p-8">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b pb-4"><div><p className="text-sm text-muted-foreground">Blog / {form.slug || '新文章'}</p><h1 className="mt-1 text-2xl font-semibold tracking-tight">专注编辑</h1></div><div className="flex items-center gap-2"><Button type="button" size="sm" variant={panelMode === 'edit' ? 'secondary' : 'outline'} onClick={() => setPanelMode('edit')}>写作</Button><Button type="button" size="sm" variant={panelMode === 'preview' ? 'secondary' : 'outline'} onClick={() => setPanelMode('preview')}>预览</Button></div></div>
+      <div className="grid min-h-[calc(100svh-11rem)] grid-cols-1 gap-5 xl:grid-cols-[16rem_20rem_minmax(0,1fr)]">
+      <aside className="min-h-0 xl:border-r xl:pr-5">
         <BlogArchivePanel
           loading={loadingIndex}
           items={items}
@@ -555,8 +557,8 @@ export default function BlogPageClient({ csrfToken }: BlogPageClientProps) {
           onSelect={(item, locale) => void handleSelectArchiveItem(item, locale)}
           onCreate={resetForm}
         />
-      </div>
-      <div className="min-h-0">
+      </aside>
+      <section className="min-h-0">
         <BlogEditorPanel
           form={form}
           localeStates={localeStates}
@@ -574,33 +576,16 @@ export default function BlogPageClient({ csrfToken }: BlogPageClientProps) {
           onPublish={() => void handlePublish()}
           onRebuild={() => void handleRebuild()}
         />
-      </div>
-      <div className="min-h-0 flex flex-col gap-3">
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant={panelMode === 'edit' ? 'default' : 'outline'}
-            onClick={() => setPanelMode('edit')}
-          >
-            写作
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={panelMode === 'preview' ? 'default' : 'outline'}
-            onClick={() => setPanelMode('preview')}
-          >
-            预览
-          </Button>
-        </div>
-        <div className="min-h-0 flex-1">
+      </section>
+      <section className="min-h-0">
+        <div className="h-full min-h-[42rem]">
           {panelMode === 'edit' ? (
             <BlogWritingPanel form={form} onChange={updateField} />
           ) : (
             <BlogPreviewPanel content={form.content} />
           )}
         </div>
+      </section>
       </div>
     </div>
   );

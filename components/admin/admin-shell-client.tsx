@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Toaster } from '@/components/ui/sonner';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 type NavItem = {
   href: string;
@@ -32,7 +33,6 @@ type NavItem = {
 type AdminShellClientProps = {
   currentPath: string;
   csrfToken: string;
-  sessionExpiresAt: number;
   email: string;
   role: 'owner' | 'editor';
   children: ReactNode;
@@ -48,7 +48,6 @@ const NAV_ITEMS: NavItem[] = [
 export default function AdminShellClient({
   currentPath,
   csrfToken,
-  sessionExpiresAt,
   email,
   role,
   children,
@@ -108,21 +107,11 @@ export default function AdminShellClient({
             <div className="group-data-[collapsible=icon]:hidden">
               <div className="truncate text-foreground">{email}</div>
               <div>{role === 'owner' ? '唯一管理员' : '编辑'}</div>
-              <div>会话至 {new Date(sessionExpiresAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon-sm"
-              onClick={handleLogout}
-              disabled={pending}
-              className="w-full"
-              title="登出"
-              aria-label="登出"
-            >
-              <LogOut />
-              <span className="group-data-[collapsible=icon]:hidden">登出</span>
-            </Button>
+            <div className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col">
+              <ThemeToggle />
+              <Button type="button" variant="outline" size="icon-sm" onClick={handleLogout} disabled={pending} className="flex-1 group-data-[collapsible=icon]:w-full" title="登出" aria-label="登出"><LogOut /><span className="group-data-[collapsible=icon]:hidden">登出</span></Button>
+            </div>
           </div>
         </SidebarFooter>
         <SidebarRail />

@@ -3,7 +3,7 @@ import { acceptInvitation, activateInvitation, getAccountById, hashPassword } fr
 import { createActivationToken, readActivationToken } from '../../../../../lib/activation';
 import { applyAuthCookies, createSession } from '../../../../../lib/auth';
 import { decryptSecret } from '../../../../../lib/secrets';
-import { generateTotpSecret, verifyTotp, type TotpSecretConfig } from '../../../../../lib/totp';
+import { createTotpUri, generateTotpSecret, verifyTotp, type TotpSecretConfig } from '../../../../../lib/totp';
 
 const ACTIVATION_COOKIE = 'arsvine_invitation_activation';
 
@@ -14,7 +14,14 @@ export async function POST(request: NextRequest) {
       if (!body.token || !body.password) throw new Error('邀请链接或密码无效。');
       const totp: TotpSecretConfig = { current: generateTotpSecret(), period: 30, digits: 6, window: 1 };
       const { account, invite } = await acceptInvitation(body.token, hashPassword(body.password), totp);
-      const response = NextResponse.json({ ok: true, data: { email: account.email, totpSecret: totp.current } });
+      const response = NextResponse.json({
+        ok: true,
+        data: {
+          email: account.email,
+          totpSecret: totp.current,
+          totpUri: createTotpUri({ email: account.email, secret: totp.current, period: totp.period, digits: totp.digits }),
+        },
+      });
       response.cookies.set(ACTIVATION_COOKIE, createActivationToken(invite.id, account.id), { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/api/auth/invitations/activate', maxAge: 15 * 60 });
       return response;
     }

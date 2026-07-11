@@ -64,6 +64,15 @@ export function getContentRepoInfo() {
   };
 }
 
+export async function verifyRepositoryConnection() {
+  const { owner, repo } = config();
+  const response = await githubFetch(`https://api.github.com/repos/${owner}/${repo}`);
+  if (!response.ok) {
+    throw new GitHubError(`Failed to read repository: ${response.status} ${response.statusText}`, response.status);
+  }
+  return { owner, repo };
+}
+
 export async function getFile(path: string) {
   const response = await githubFetch(contentUrl(path));
   if (response.status === 404) return null;
